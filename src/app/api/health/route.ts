@@ -23,7 +23,8 @@ export async function GET() {
       version: APP_VERSION,
       ...(commit ? { commit, commitVerified: verified } : {}),
     });
-  } catch {
+  } catch (err) {
+    console.error("[health] BD no disponible:", err);
     return Response.json(
       { ok: false, error: { code: "db_unavailable", message: "Base de datos no disponible" } },
       { status: 503 }
