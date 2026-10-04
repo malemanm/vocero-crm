@@ -95,6 +95,10 @@ export function LabClient() {
         void refetchDetail(data.runId);
       }
     },
+    onReconnect: () => {
+      void refetchRuns();
+      if (selectedRunId) void refetchDetail(selectedRunId);
+    },
   });
 
   async function launch() {

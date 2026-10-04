@@ -9,7 +9,9 @@ import postgres from "postgres";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const url = process.env.DATABASE_URL;
+// Vercel: las migraciones corren en el BUILD con una conexión de sesión
+// (MIGRATE_DATABASE_URL, puerto 5432 del pooler); el runtime usa DATABASE_URL.
+const url = process.env.MIGRATE_DATABASE_URL || process.env.DATABASE_URL;
 if (!url) {
   console.error("[migrate] DATABASE_URL no está definida");
   process.exit(1);
@@ -24,6 +26,7 @@ for (let attempt = 1; attempt <= maxAttempts; attempt++) {
   // TimeZone UTC: invariante de tiempo del proyecto (ver src/lib/db/index.ts).
   const sql = postgres(url, {
     max: 1,
+    prepare: false,
     onnotice: () => {},
     connection: { TimeZone: "UTC" },
   });

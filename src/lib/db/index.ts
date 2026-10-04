@@ -39,8 +39,13 @@ const globalForDb = globalThis as unknown as {
 
 function createClient() {
   const env = getEnv();
+  // Vercel (serverless) + pooler de Supabase en modo transacción: pocas
+  // conexiones por instancia y sin prepared statements (el pooler no los
+  // soporta). Fuera de Vercel se conserva el comportamiento original.
+  const serverless = Boolean(process.env.VERCEL);
   return postgres(env.DATABASE_URL, {
-    max: 10,
+    max: serverless ? 3 : 10,
+    prepare: !serverless,
     ...PG_CONNECTION_OPTIONS,
   });
 }

@@ -123,6 +123,7 @@ export function AppNav({
   useEvents({
     onMessageNew: () => void refetchUnread(),
     onConversationUpdated: () => void refetchUnread(),
+    onReconnect: () => void refetchUnread(),
   });
 
   const version = commit ?? { commit: BUILD_COMMIT, verified: BUILD_COMMIT !== "" };

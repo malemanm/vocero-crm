@@ -1,6 +1,8 @@
 import {
   boolean,
   check,
+  customType,
+  primaryKey,
   index,
   integer,
   jsonb,
@@ -486,6 +488,28 @@ export const mediaAsset = pgTable(
     index("media_asset_org_idx").on(t.organizationId, t.createdAt),
     index("media_asset_wa_media_idx").on(t.waMediaId),
   ]
+);
+
+/**
+ * Vercel: sin disco persistente, los bytes de adjuntos/logo/icono viven en
+ * Postgres. Llave (organización, nombre del archivo) = lo que antes era la
+ * ruta `MEDIA_DIR/{org}/{assetId}`.
+ */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
+
+export const mediaBlob = pgTable(
+  "media_blob",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.name] })]
 );
 
 export const metaCredentials = pgTable(

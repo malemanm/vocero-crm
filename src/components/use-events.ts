@@ -34,6 +34,17 @@ export function useEvents(handlers: EventHandlers): void {
   handlersRef.current = handlers;
 
   useEffect(() => {
+    // Vercel: el bus de eventos vive en memoria de UNA instancia, y el webhook
+    // que publica corre en otra, así que SSE no entregaría nada. En ese modo
+    // se sondea: onReconnect ya es el catch-up por refetch de cada pantalla.
+    if (process.env.NEXT_PUBLIC_REALTIME_MODE === "poll") {
+      const id = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          handlersRef.current.onReconnect?.();
+        }
+      }, 4000);
+      return () => clearInterval(id);
+    }
     const source = new EventSource("/api/events");
     let hadError = false;
 

@@ -6,6 +6,8 @@ import { isAiConfigured } from "@/lib/env";
 import { RunConflictError, startRun } from "@/server/lab/runner";
 
 export const dynamic = "force-dynamic";
+// La corrida del Laboratorio sigue en segundo plano (after) hasta este tope.
+export const maxDuration = 300;
 
 /** Historial de corridas con delta de score vs la anterior (FR-033). */
 export const GET = withAuth(async (session) => {

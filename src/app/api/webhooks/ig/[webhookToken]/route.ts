@@ -18,6 +18,7 @@ import { processZernioPayload, resolveZernioSecret } from "@/server/zernio/dispa
  * payloads son inconfundibles: Meta manda `object: "instagram"`, Zernio manda
  * un evento plano con `account`.
  */
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ webhookToken: string }> };

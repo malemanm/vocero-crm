@@ -14,6 +14,7 @@ import { processTemplateStatusValue } from "@/server/whatsapp/template-events";
  * Capa 2: firma x-hub-signature-256 solo si META_APP_SECRET está configurado.
  * El POST siempre responde 200 tras validar; el procesamiento va en after().
  */
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ webhookToken: string }> };

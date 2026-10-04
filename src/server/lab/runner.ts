@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -18,7 +19,9 @@ import { PERSONAS, type Persona } from "@/server/lab/personas";
  * si algo intenta enviarlas.
  */
 
-const RUN_TIMEOUT_MS = 10 * 60 * 1000;
+// Vercel Hobby corta la función a 300 s: el timeout propio tiene que saltar
+// antes para dejar la corrida marcada como fallida en vez de "running" eterna.
+const RUN_TIMEOUT_MS = process.env.VERCEL ? 280 * 1000 : 10 * 60 * 1000;
 
 export class RunConflictError extends Error {}
 
@@ -50,10 +53,14 @@ export async function startRun(organizationId: string): Promise<string> {
   );
 
   // Fire-and-forget in-process: el POST regresa ya; el progreso va por SSE.
-  void executeRun(runId, organizationId).catch(async (err) => {
-    console.error("[lab] corrida falló:", err);
-    await failRun(runId, organizationId, String(err));
-  });
+  const background = () =>
+    executeRun(runId, organizationId).catch(async (err) => {
+      console.error("[lab] corrida falló:", err);
+      await failRun(runId, organizationId, String(err));
+    });
+  // Serverless: sin after() la función se congela al responder el 202.
+  if (process.env.VERCEL) after(background);
+  else void background();
 
   return runId;
 }

@@ -1,4 +1,3 @@
-import { rm } from "node:fs/promises";
 import { apiError, withAuth } from "@/lib/api";
 import {
   FAVICON_ASSET,
@@ -6,7 +5,7 @@ import {
   sniffFaviconMime,
 } from "@/lib/favicon";
 import { getBranding, saveBranding } from "@/server/branding";
-import { mediaFilePath, saveMediaFile } from "@/server/whatsapp/media";
+import { deleteMediaFile, saveMediaFile } from "@/server/whatsapp/media";
 
 export const dynamic = "force-dynamic";
 
@@ -71,9 +70,9 @@ export const DELETE = withAuth(async (session) => {
   // El archivo se borra DESPUÉS de que la marca ya no lo referencia: si esto
   // falla, queda un archivo huérfano —inofensivo— en vez de una marca
   // apuntando a algo que ya no está.
-  await rm(mediaFilePath(session.organizationId, FAVICON_ASSET), {
-    force: true,
-  }).catch(() => null);
+  await deleteMediaFile(session.organizationId, FAVICON_ASSET).catch(
+    () => null
+  );
 
   return Response.json({ favicon: null });
 });

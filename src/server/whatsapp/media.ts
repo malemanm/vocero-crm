@@ -1,6 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { graphRequest, MetaApiError } from "@/lib/meta/client";
@@ -87,17 +85,10 @@ export function validateOutgoing(mime: string, sizeBytes: number) {
   return kind;
 }
 
-/* ---------- Disco local ---------- */
+/* ---------- Almacenamiento (Postgres: Vercel no tiene disco persistente) ---------- */
 
 function assertSafeSegment(s: string): void {
   if (!/^[\w.-]+$/.test(s)) throw new Error(`segmento de ruta inválido: ${s}`);
-}
-
-/** Ruta absoluta del archivo de un asset dentro de MEDIA_DIR. */
-export function mediaFilePath(organizationId: string, assetId: string): string {
-  assertSafeSegment(organizationId);
-  assertSafeSegment(assetId);
-  return path.join(getEnv().MEDIA_DIR, organizationId, assetId);
 }
 
 export async function saveMediaFile(
@@ -105,17 +96,40 @@ export async function saveMediaFile(
   assetId: string,
   data: Buffer | Uint8Array
 ): Promise<string> {
-  const file = mediaFilePath(organizationId, assetId);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, data);
-  return path.join(organizationId, assetId); // ruta relativa persistida en BD
+  assertSafeSegment(organizationId);
+  assertSafeSegment(assetId);
+  const buf = Buffer.from(data);
+  await getDb()
+    .insert(schema.mediaBlob)
+    .values({ organizationId, name: assetId, data: buf })
+    .onConflictDoUpdate({
+      target: [schema.mediaBlob.organizationId, schema.mediaBlob.name],
+      set: { data: buf },
+    });
+  return `${organizationId}/${assetId}`; // referencia persistida en BD
 }
 
 export async function readMediaFile(
   organizationId: string,
   assetId: string
 ): Promise<Buffer> {
-  return readFile(mediaFilePath(organizationId, assetId));
+  assertSafeSegment(organizationId);
+  assertSafeSegment(assetId);
+  const rows = await getDb()
+    .select({ data: schema.mediaBlob.data })
+    .from(schema.mediaBlob)
+    .where(
+      and(
+        eq(schema.mediaBlob.organizationId, organizationId),
+        eq(schema.mediaBlob.name, assetId)
+      )
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    throw Object.assign(new Error("archivo no encontrado"), { code: "ENOENT" });
+  }
+  return Buffer.from(row.data);
 }
 
 /**
@@ -127,7 +141,16 @@ export async function deleteMediaFile(
   organizationId: string,
   assetId: string
 ): Promise<void> {
-  await rm(mediaFilePath(organizationId, assetId), { force: true });
+  assertSafeSegment(organizationId);
+  assertSafeSegment(assetId);
+  await getDb()
+    .delete(schema.mediaBlob)
+    .where(
+      and(
+        eq(schema.mediaBlob.organizationId, organizationId),
+        eq(schema.mediaBlob.name, assetId)
+      )
+    );
 }
 
 /* ---------- Descarga desde Graph (entrantes y echoes) ---------- */

@@ -9,8 +9,10 @@ const { version } = JSON.parse(
 
 const nextConfig: NextConfig = {
   // standalone es para la imagen Docker (Linux). En Windows el trazado crea
-  // symlinks que requieren permisos elevados, así que ahí se omite.
-  output: process.platform === "win32" ? undefined : "standalone",
+  // symlinks que requieren permisos elevados, así que ahí se omite. En Vercel
+  // tampoco: la plataforma empaqueta las funciones por su cuenta.
+  output:
+    process.platform === "win32" || process.env.VERCEL ? undefined : "standalone",
   // El paquete `postgres` usa APIs de Node que no deben empaquetarse en el bundle.
   serverExternalPackages: ["postgres"],
   // Se congelan al construir: lo que queda aquí va dentro del binario y no
