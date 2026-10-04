@@ -11,11 +11,16 @@ import { destinatarioMeta } from "@/lib/meta/destinatario";
 import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import {
-  getCredentialsByOrg,
   getCredentialsByWabaId,
   markReconnectRequired,
 } from "@/server/whatsapp/credentials";
-import { callGraphSend, SendError } from "@/server/inbox/send";
+import { SendError } from "@/server/inbox/send";
+import { YCloudApiError, ycloudRequest } from "@/lib/ycloud/client";
+import { markYCloudReconnectRequired } from "@/server/ycloud/credentials";
+import {
+  getWhatsAppConnection,
+  sendWhatsAppPayload,
+} from "@/server/whatsapp/connection";
 import { serializeMessage } from "@/server/inbox/ingest";
 import type { WebhookValue } from "@/server/inbox/webhook";
 
@@ -27,7 +32,9 @@ export class TemplateError extends Error {
     | "invalid"
     | "not_found"
     | "meta_error"
-    | "meta_unavailable";
+    | "meta_unavailable"
+    // 020: el proveedor activo no expone esta operación por API.
+    | "provider_unsupported";
 
   constructor(code: TemplateError["code"], message: string) {
     super(message);
@@ -43,6 +50,7 @@ const TEMPLATE_ERROR_STATUS: Record<TemplateError["code"], number> = {
   not_found: 404,
   meta_error: 422,
   meta_unavailable: 503,
+  provider_unsupported: 422,
 };
 
 export function templateErrorStatus(err: TemplateError): number {
@@ -73,13 +81,23 @@ export async function createTemplate(
   const variableError = validateBodyVariables(input.body);
   if (variableError) throw new TemplateError("invalid", variableError);
 
-  const creds = await getCredentialsByOrg(organizationId);
-  if (!creds) {
+  const conn = await getWhatsAppConnection(organizationId);
+  if (!conn) {
     throw new TemplateError("not_connected", "Conecta tu número de WhatsApp primero");
   }
-  if (creds.status === "reconnect_required") {
+  if (conn.creds.status === "reconnect_required") {
     throw new TemplateError("reconnect_required", "Reconecta tu número antes de crear plantillas");
   }
+  if (conn.provider === "ycloud") {
+    // Degradación definida (spec 020): el endpoint de creación de YCloud está
+    // pendiente de confirmar con una cuenta real. Mientras, la plantilla se crea
+    // en su panel y «Sincronizar» la trae con su estado.
+    throw new TemplateError(
+      "provider_unsupported",
+      "Con YCloud, crea la plantilla en el panel de YCloud y pulsa «Sincronizar»"
+    );
+  }
+  const creds = conn.creds;
 
   const name = input.name
     .toLowerCase()
@@ -175,24 +193,67 @@ function mapMetaStatus(
   return null;
 }
 
+type RemoteTemplate = {
+  id?: string;
+  name?: string;
+  language?: string;
+  status?: string;
+  category?: string;
+  rejected_reason?: string;
+  /** 020: texto del componente BODY (solo lo llena el listado de YCloud). */
+  body?: string;
+};
+
+/** Plantillas de la cuenta en YCloud, en la forma que ya consume el sincronizador. */
+async function listYCloudTemplates(
+  creds: { apiKey: string; wabaId: string | null }
+): Promise<RemoteTemplate[]> {
+  const qs = new URLSearchParams({ limit: "100" });
+  if (creds.wabaId) qs.set("filter.wabaId", creds.wabaId);
+  const res = await ycloudRequest<{
+    items?: {
+      official_id?: string;
+      name?: string;
+      language?: string;
+      status?: string;
+      category?: string;
+      reason?: string;
+      components?: { type?: string; text?: string }[];
+    }[];
+  } | null>(`/whatsapp/templates?${qs.toString()}`, { apiKey: creds.apiKey });
+  return (res?.items ?? []).map((t) => ({
+    id: t.official_id,
+    name: t.name,
+    language: t.language,
+    status: t.status,
+    category: t.category,
+    rejected_reason: t.reason,
+    body: t.components?.find((c) => c.type?.toUpperCase() === "BODY")?.text,
+  }));
+}
+
 /**
  * Sincroniza estados desde Graph (`GET {waba}/message_templates`). Cubre el
  * modo agencia: los webhooks de plantillas NO siguen el override de callback,
  * así que el pull es la vía universal (DV-VC-04/DV-VC-15).
  */
 export async function syncTemplates(organizationId: string): Promise<number> {
-  const creds = await getCredentialsByOrg(organizationId);
-  if (!creds) {
+  const conn = await getWhatsAppConnection(organizationId);
+  if (!conn) {
     throw new TemplateError("not_connected", "Conecta tu número de WhatsApp primero");
   }
 
-  let data: {
-    data?: { id?: string; name?: string; language?: string; status?: string; category?: string; quality_score?: unknown; rejected_reason?: string }[];
-  };
+  let remotes: RemoteTemplate[];
   try {
-    data = await graphRequest(`${creds.wabaId}/message_templates`, {
-      token: creds.token,
-    });
+    remotes =
+      conn.provider === "meta"
+        ? (
+            await graphRequest<{ data?: RemoteTemplate[] }>(
+              `${conn.creds.wabaId}/message_templates`,
+              { token: conn.creds.token }
+            )
+          ).data ?? []
+        : await listYCloudTemplates(conn.creds);
   } catch (err) {
     if (err instanceof MetaApiError) {
       if (err.isAuthError) {
@@ -201,8 +262,16 @@ export async function syncTemplates(organizationId: string): Promise<number> {
       }
       throw new TemplateError("meta_unavailable", "No se pudo consultar Meta");
     }
+    if (err instanceof YCloudApiError) {
+      if (err.isAuthError) {
+        await markYCloudReconnectRequired(organizationId);
+        throw new TemplateError("reconnect_required", "La API key expiró: reconecta el número");
+      }
+      throw new TemplateError("meta_unavailable", "No se pudo consultar YCloud");
+    }
     throw err;
   }
+  const data = { data: remotes };
 
   const db = getDb();
   const local = await db
@@ -219,7 +288,30 @@ export async function syncTemplates(organizationId: string): Promise<number> {
         (remote.id && t.waTemplateId === remote.id) ||
         (t.name === remote.name && t.language === remote.language)
     );
-    if (!match) continue;
+    if (!match) {
+      // 020: con YCloud las plantillas se crean en su panel, no desde Vocero:
+      // se importan aquí. Una sin cuerpo de texto (solo botones, p. ej.) no se
+      // puede enviar desde la bandeja y se omite. Meta conserva su
+      // comportamiento: solo actualiza las que Vocero creó.
+      if (conn.provider === "ycloud" && remote.name && remote.language && remote.body) {
+        await db
+          .insert(schema.template)
+          .values({
+            id: newId("template"),
+            organizationId,
+            name: remote.name,
+            language: remote.language,
+            category: remote.category ?? "UTILITY",
+            body: remote.body,
+            status,
+            rejectionReason: status === "rejected" ? (remote.rejected_reason ?? null) : null,
+            waTemplateId: remote.id ?? null,
+          })
+          .onConflictDoNothing();
+        updated += 1;
+      }
+      continue;
+    }
     // Meta reclasifica la categoría al aprobar (una UTILITY puede volverse
     // MARKETING, lo que cambia el costo por conversación): es autoridad.
     const category = remote.category ?? match.category;
@@ -248,24 +340,46 @@ export async function applyTemplateStatusEvent(
   const creds = await getCredentialsByWabaId(wabaId);
   if (!creds) return;
 
-  const status = mapMetaStatus(value.event);
   const name = value.message_template_name;
   const language = value.message_template_language;
-  if (!status || !name || !language) return;
+  if (!name || !language) return;
+  await applyTemplateStatusForOrg(creds.organizationId, {
+    event: value.event ?? "",
+    name,
+    language,
+    reason: value.reason ?? null,
+  });
+}
+
+/**
+ * 020 — Aplica un cambio de estado de plantilla a una organización ya
+ * resuelta. Lo comparten Meta (por WABA) y YCloud (por WABA firmado).
+ */
+export async function applyTemplateStatusForOrg(
+  organizationId: string,
+  input: {
+    event: string;
+    name: string;
+    language: string;
+    reason: string | null;
+  }
+): Promise<void> {
+  const status = mapMetaStatus(input.event);
+  if (!status) return;
 
   const db = getDb();
   await db
     .update(schema.template)
     .set({
       status,
-      rejectionReason: status === "rejected" ? (value.reason ?? null) : null,
+      rejectionReason: status === "rejected" ? input.reason : null,
       updatedAt: new Date(),
     })
     .where(
       and(
-        eq(schema.template.organizationId, creds.organizationId),
-        eq(schema.template.name, name),
-        eq(schema.template.language, language)
+        eq(schema.template.organizationId, organizationId),
+        eq(schema.template.name, input.name),
+        eq(schema.template.language, input.language)
       )
     );
 }
@@ -337,9 +451,9 @@ export async function sendTemplate(input: {
     );
   }
 
-  const creds = await getCredentialsByOrg(input.organizationId);
-  if (!creds) throw new TemplateError("not_connected", "Sin número conectado");
-  if (creds.status === "reconnect_required") {
+  const conn = await getWhatsAppConnection(input.organizationId);
+  if (!conn) throw new TemplateError("not_connected", "Sin número conectado");
+  if (conn.creds.status === "reconnect_required") {
     throw new TemplateError("reconnect_required", "Reconecta el número");
   }
 
@@ -357,7 +471,7 @@ export async function sendTemplate(input: {
     );
   }
 
-  const waMessageId = await callGraphSend(creds, {
+  const waMessageId = await sendWhatsAppPayload(conn, {
     messaging_product: "whatsapp",
     ...destinatario,
     type: "template",

@@ -49,6 +49,8 @@ export type WebhookMediaPayload = {
   filename?: string;
   /** Solo audio: true si es nota de voz. */
   voice?: boolean;
+  /** 020: URL de descarga cuando el proveedor la entrega en el webhook (YCloud). */
+  link?: string;
 };
 
 export type WebhookLocation = {

@@ -33,6 +33,13 @@ const envSchema = z.object({
   // 015: motor de agenda. Apagado por defecto — sin el, toda la superficie de
   // agenda responde 404 y la UI no la menciona. Ej.: AGENDA=on
   AGENDA: z.string().optional(),
+  // 020: proveedores de WhatsApp encendidos, separados por coma. Meta siempre
+  // está on. Ej.: WHATSAPP_PROVIDERS=meta,ycloud. Sin ella, YCloud no existe
+  // (su pantalla, su webhook y sus rutas responden 404).
+  WHATSAPP_PROVIDERS: z.string().optional(),
+  // 020: base de la API de YCloud. Solo se sobreescribe para apuntar al mock
+  // en el self-test; en producción se usa la real.
+  YCLOUD_BASE_URL: z.string().url().default("https://api.ycloud.com/v2"),
   // 016: atribucion de anuncios y reporte a la Conversions API de Meta.
   // Apagada por defecto: sin ella no se captura de que anuncio vino una
   // conversacion, no se le reporta nada a Meta y la superficie da 404.

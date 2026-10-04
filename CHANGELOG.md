@@ -5,6 +5,24 @@ sigue el SemVer del [README](README.md#versiones): una menor trae funciones
 nuevas y actualizar es redesplegar. Desde 1.4.0, cada tag `vX.Y.Z` publica la
 imagen `ghcr.io/kevinrivm/vocero-crm:X.Y.Z`.
 
+## Sin publicar
+
+### WhatsApp por YCloud (opcional)
+
+Nueva forma de conectar el número de WhatsApp: con la API key de YCloud, sin app
+de desarrollador en Meta. Apagada por defecto.
+
+- **Activarla.** `WHATSAPP_PROVIDERS=meta,ycloud` y **Configuración → YCloud**.
+  Guía: [docs/ycloud.md](docs/ycloud.md); diseño:
+  [specs/020-ycloud-whatsapp](specs/020-ycloud-whatsapp/spec.md).
+- **Migración `0016_ycloud_credentials`.** Solo agrega la tabla (con RLS
+  activado). Se aplica siempre, aunque YCloud esté apagado.
+- **Adjuntos en Postgres** (`0015_media_blob`): los adjuntos, el logo y el icono
+  se guardan en la base en vez del volumen `/data`, para poder correr en
+  plataformas sin disco persistente (Vercel). `MEDIA_DIR` ya no se usa.
+- **Actualizar.** Sin variables obligatorias nuevas. Una instancia con Meta
+  directo no cambia.
+
 ## 1.4.0 — 2026-09-30
 
 ### Actualizar desde 1.3.0

@@ -98,7 +98,8 @@ export function mediaInputFrom(msg: WebhookMessage): MediaInput | null {
       mimeType: media.mime_type ?? null,
       fileName: media.filename ?? null,
       caption: media.caption ?? null,
-      payload: null,
+      // 020: YCloud entrega la URL de descarga en el propio webhook.
+      payload: media.link ? { link: media.link } : null,
       fetchStatus: "pending",
     };
   }
@@ -229,8 +230,17 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
     return;
   }
 
-  const organizationId = credentials.organizationId;
+  await processMessagesForOrg(credentials.organizationId, value);
+}
 
+/**
+ * 020 — El cuerpo de la ingesta, con la organización ya resuelta por el
+ * proveedor (Meta la saca del phone_number_id; YCloud, del número del negocio).
+ */
+export async function processMessagesForOrg(
+  organizationId: string,
+  value: WebhookValue
+): Promise<void> {
   for (const status of value.statuses ?? []) {
     await applyStatusUpdate(organizationId, status);
   }
@@ -512,7 +522,13 @@ export function serializeMessage(
           fileSize: media.fileSize,
           caption: media.caption,
           fetchStatus: media.fetchStatus,
-          payload: media.payload,
+          // Ubicación y contactos SON el contenido del mensaje; en un adjunto
+          // binario el payload guarda la URL de descarga del proveedor (una
+          // capacidad) y no debe llegar al navegador.
+          payload:
+            media.kind === "location" || media.kind === "contacts"
+              ? media.payload
+              : null,
         }
       : null,
     createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),

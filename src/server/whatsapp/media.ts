@@ -1,11 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { getEnv } from "@/lib/env";
+import { isMockEnabled } from "@/lib/env";
 import { graphRequest, MetaApiError } from "@/lib/meta/client";
-import {
-  getCredentialsByOrg,
-  type Credentials,
-} from "@/server/whatsapp/credentials";
+import { getWhatsAppConnection } from "@/server/whatsapp/connection";
+import type { YCloudCredentials } from "@/server/ycloud/credentials";
 
 /**
  * 008 — Única frontera de media con la Graph API (constitución II: todo el
@@ -213,6 +211,129 @@ export async function downloadGraphMedia(
   };
 }
 
+/** Host de YCloud: el propio dominio o un subdominio, NUNCA un sufijo suelto. */
+function isYCloudHost(host: string): boolean {
+  return host === "ycloud.com" || host.endsWith(".ycloud.com");
+}
+
+/** Loopback, redes privadas, link-local y nombres internos: no son un adjunto. */
+function isPrivateHost(rawHost: string): boolean {
+  const h = rawHost.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    h === "localhost" ||
+    h.endsWith(".localhost") ||
+    h.endsWith(".local") ||
+    h.endsWith(".internal")
+  ) {
+    return true;
+  }
+  if (h.includes(":")) {
+    return (
+      h === "::1" ||
+      h === "::" ||
+      /^f[cd]/.test(h) ||
+      h.startsWith("fe80") ||
+      h.startsWith("::ffff:")
+    );
+  }
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    );
+  }
+  return false;
+}
+
+const MAX_MEDIA_REDIRECTS = 3;
+
+/**
+ * 020 — Descarga un adjunto entrante de YCloud desde la URL que trajo el
+ * webhook (guardada en `payload.link`).
+ *
+ * - La API key solo viaja a `ycloud.com` y sus subdominios, por https, y se
+ *   re-evalúa en CADA salto: una redirección a un CDN de terceros se sigue sin
+ *   la key (el fetch por defecto la reenviaría).
+ * - Una URL que apunta a una red privada se rechaza (SSRF). La excepción es el
+ *   loopback del self-test, y solo con los mocks encendidos fuera de producción.
+ */
+export async function downloadYCloudMedia(
+  creds: YCloudCredentials,
+  asset: { payload: unknown },
+  maxBytes: number = MEDIA_LIMITS.document.maxBytes
+): Promise<{ data: Buffer; mimeType: string | null; fileSize: number }> {
+  const link = (asset.payload as { link?: string } | null)?.link;
+  if (!link) throw new MediaFetchError("YCloud no entregó URL del adjunto");
+
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    throw new MediaFetchError("La URL del adjunto no es válida");
+  }
+
+  let res: Response | null = null;
+  for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
+    const loopbackOk =
+      isMockEnabled() &&
+      (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+    if (!loopbackOk) {
+      if (url.protocol !== "https:") {
+        throw new MediaFetchError("La URL del adjunto no es https");
+      }
+      if (isPrivateHost(url.hostname)) {
+        throw new MediaFetchError("La URL del adjunto apunta a una red privada");
+      }
+    }
+    const trusted = url.protocol === "https:" && isYCloudHost(url.hostname);
+    try {
+      res = await fetch(url, {
+        headers: trusted ? { "X-API-Key": creds.apiKey } : {},
+        redirect: "manual",
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new MediaFetchError("No se pudo descargar el adjunto");
+    }
+    const location = res.headers.get("location");
+    if (res.status >= 300 && res.status < 400 && location) {
+      try {
+        url = new URL(location, url);
+      } catch {
+        throw new MediaFetchError("Redirección inválida del adjunto");
+      }
+      res = null;
+      continue;
+    }
+    break;
+  }
+  if (!res) throw new MediaFetchError("Demasiadas redirecciones al descargar el adjunto");
+
+  if (!res.ok) {
+    throw new MediaFetchError(
+      `La descarga devolvió ${res.status}`,
+      res.status === 404 || res.status === 410
+    );
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.byteLength > maxBytes) {
+    throw new MediaFetchError("El adjunto excede el límite de tamaño", true);
+  }
+  return {
+    data: buf,
+    mimeType: res.headers.get("content-type"),
+    fileSize: buf.byteLength,
+  };
+}
+
 /**
  * Garantiza que el asset esté en disco (`fetchStatus=available`).
  * Se usa en la descarga in-process post-ingesta Y on-demand desde la ruta de
@@ -234,14 +355,14 @@ export async function ensureAssetAvailable(
   if (asset.fetchStatus === "available") return asset;
   if (!asset.waMediaId) return null; // location/contacts no tienen binario
 
-  const creds = await getCredentialsByOrg(organizationId);
-  if (!creds) return null;
+  const conn = await getWhatsAppConnection(organizationId);
+  if (!conn) return null;
 
   try {
-    const { data, mimeType, fileSize } = await downloadGraphMedia(
-      creds.token,
-      asset.waMediaId
-    );
+    const { data, mimeType, fileSize } =
+      conn.provider === "meta"
+        ? await downloadGraphMedia(conn.creds.token, asset.waMediaId)
+        : await downloadYCloudMedia(conn.creds, asset);
     const storagePath = await saveMediaFile(organizationId, assetId, data);
     const updated = await db
       .update(schema.mediaAsset)
@@ -251,6 +372,8 @@ export async function ensureAssetAvailable(
         fileSize,
         fetchStatus: "available",
         fetchError: null,
+        // La URL de descarga de YCloud ya cumplió: no se conserva.
+        payload: null,
         updatedAt: new Date(),
       })
       .where(eq(schema.mediaAsset.id, assetId))
@@ -267,62 +390,5 @@ export async function ensureAssetAvailable(
   }
 }
 
-/* ---------- Subida a Graph (salientes) ---------- */
-
-/**
- * Sube un archivo a Graph (`POST /{phone_number_id}/media`, multipart) y
- * devuelve el media id para usar en /messages. Errores → MetaApiError (la
- * capa de envío los traduce con las mismas reglas que el texto).
- */
-export async function uploadGraphMedia(
-  credentials: Credentials,
-  file: { data: Buffer | Uint8Array; mimeType: string; fileName?: string }
-): Promise<string> {
-  const env = getEnv();
-  const url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/${credentials.phoneNumberId}/media`;
-  const form = new FormData();
-  form.set("messaging_product", "whatsapp");
-  form.set("type", file.mimeType);
-  const bytes = new Uint8Array(file.data);
-  form.set(
-    "file",
-    new Blob([bytes], { type: file.mimeType }),
-    file.fileName ?? "adjunto"
-  );
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${credentials.token}` },
-      body: form,
-    });
-  } catch (cause) {
-    throw new MetaApiError("No se pudo contactar la API de Meta", {
-      status: 0,
-      details: cause,
-    });
-  }
-  const text = await res.text();
-  let json: unknown = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {}
-  if (!res.ok) {
-    const err = (json as { error?: { message?: string; code?: number; type?: string } })
-      ?.error;
-    throw new MetaApiError(err?.message ?? `Meta respondió ${res.status}`, {
-      status: res.status,
-      code: err?.code ?? null,
-      type: err?.type ?? null,
-      details: json ?? text,
-    });
-  }
-  const id = (json as { id?: string })?.id;
-  if (!id) {
-    throw new MetaApiError("Meta no devolvió ID del media subido", {
-      status: res.status,
-    });
-  }
-  return id;
-}
+// Movido a graph-send.ts (transporte Graph) para no crear un ciclo con connection.ts.
+export { uploadGraphMedia } from "@/server/whatsapp/graph-send";

@@ -10,6 +10,11 @@ export default defineConfig({
   test: {
     include: ["tests/unit/**/*.test.ts"],
     environment: "node",
+    // La primera importación de una ruta de Next (que arrastra el esquema, el
+    // cliente de BD y los adaptadores) puede pasar de los 5 s por defecto en una
+    // máquina cargada o con la caché fría, y entonces el test falla por reloj,
+    // no por lógica.
+    testTimeout: 20_000,
   },
   resolve: {
     alias: {

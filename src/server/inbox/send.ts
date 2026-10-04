@@ -1,14 +1,16 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
-import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
+import { MetaApiError, normalizeRecipient } from "@/lib/meta/client";
 import { destinatarioMeta, type Destinatario } from "@/lib/meta/destinatario";
 import { publish } from "@/server/events/bus";
 import {
-  getCredentialsByOrg,
-  markReconnectRequired,
-  type Credentials,
-} from "@/server/whatsapp/credentials";
+  getWhatsAppConnection,
+  markConnectionReconnectRequired,
+  sendWhatsAppPayload,
+  uploadWhatsAppMedia,
+  type WhatsAppConnection,
+} from "@/server/whatsapp/connection";
 import { isWindowOpen } from "@/server/inbox/window";
 import { IG_PREFIX } from "@/server/inbox/identity";
 import {
@@ -31,38 +33,16 @@ import {
 } from "@/server/channels/capabilities";
 import { isChannelEnabled } from "@/server/channels/enabled";
 import { serializeMessage } from "@/server/inbox/ingest";
-import {
-  saveMediaFile,
-  uploadGraphMedia,
-  validateOutgoing,
-} from "@/server/whatsapp/media";
-
-/** Error tipado del envío; `code` mapea a HTTP en la capa de API. */
-export class SendError extends Error {
-  code:
-    | "sandbox_violation"
-    | "not_connected"
-    | "reconnect_required"
-    | "window_closed"
-    | "meta_error"
-    | "meta_unavailable"
-    | "upload_failed";
-  /** 008: presente cuando el fallo ocurrió TRAS persistir el mensaje (failed). */
-  messageId?: string;
-
-  constructor(code: SendError["code"], message: string) {
-    super(message);
-    this.name = "SendError";
-    this.code = code;
-  }
-}
+import { SendError } from "@/server/whatsapp/send-error";
+import { callGraphSend } from "@/server/whatsapp/graph-send";
+import { saveMediaFile, validateOutgoing } from "@/server/whatsapp/media";
 
 type SendResult = { messageId: string };
 
 type SendTarget = {
   conversation: typeof schema.conversation.$inferSelect;
-  /** null cuando el destino no es WhatsApp (014). */
-  credentials: Credentials | null;
+  /** null cuando el destino no es WhatsApp (014). 020: Meta o YCloud. */
+  connection: WhatsAppConnection | null;
   /** El destinatario en la forma que Meta espera: `to` o `recipient`. */
   destinatario: Destinatario;
   /** El identificador a secas, para lo que no arma un payload de Graph. */
@@ -137,7 +117,7 @@ async function prepareSend(
       : row.contact.waIdentity;
     return {
       conversation: row.conversation,
-      credentials: null,
+      connection: null,
       // Instagram no pasa por la Graph API de WhatsApp; el campo existe para
       // cumplir el tipo y su camino de envío no lo mira.
       destinatario: { to: igRecipient },
@@ -173,7 +153,7 @@ async function prepareSend(
       : row.contact.waIdentity;
     return {
       conversation: row.conversation,
-      credentials: null,
+      connection: null,
       // Messenger tampoco pasa por la Graph API de WhatsApp.
       destinatario: { to: fbRecipient },
       recipient: fbRecipient,
@@ -196,14 +176,16 @@ async function prepareSend(
     );
   }
 
-  const credentials = await getCredentialsByOrg(organizationId);
-  if (!credentials) {
+  const connection = await getWhatsAppConnection(organizationId);
+  if (!connection) {
     throw new SendError("not_connected", "No hay número de WhatsApp conectado");
   }
-  if (credentials.status === "reconnect_required") {
+  if (connection.creds.status === "reconnect_required") {
     throw new SendError(
       "reconnect_required",
-      "El token de WhatsApp expiró: reconecta el número en Configuración"
+      connection.provider === "ycloud"
+        ? "La API key de YCloud expiró: reconecta el número en Configuración"
+        : "El token de WhatsApp expiró: reconecta el número en Configuración"
     );
   }
 
@@ -231,7 +213,7 @@ async function prepareSend(
     );
   }
 
-  return { conversation: row.conversation, credentials, destinatario, recipient };
+  return { conversation: row.conversation, connection, destinatario, recipient };
 }
 
 async function persistOutbound(input: {
@@ -298,13 +280,12 @@ export async function sendText(input: {
   aiGenerated?: boolean;
 }): Promise<SendResult> {
   const target = await prepareSend(input.conversationId, input.organizationId);
-  const { credentials } = target;
 
   const waMessageId = target.instagram
     ? await callInstagramSend(target, input.text)
     : target.messenger
       ? await callMessengerSend(target, input.text)
-      : await callGraphSend(credentials!, {
+      : await sendWhatsAppPayload(target.connection!, {
           messaging_product: "whatsapp",
           ...target.destinatario,
           type: "text",
@@ -346,7 +327,6 @@ export async function sendMediaMessage(input: {
   const kind = validateOutgoing(input.file.mimeType, input.file.data.byteLength);
 
   const target = await prepareSend(input.conversationId, input.organizationId);
-  const { credentials } = target;
   const sendCaps = capabilitiesFor(target.conversation.channel);
   if (!sendCaps.outboundMedia) {
     throw new SendError(
@@ -379,7 +359,7 @@ export async function sendMediaMessage(input: {
   const asset = assetRows[0]!;
 
   try {
-    const waMediaId = await uploadGraphMedia(credentials!, input.file);
+    const waMediaId = await uploadWhatsAppMedia(target.connection!, input.file);
     await db
       .update(schema.mediaAsset)
       .set({ waMediaId, updatedAt: new Date() })
@@ -390,7 +370,7 @@ export async function sendMediaMessage(input: {
     if (kind === "document" && input.file.fileName) {
       mediaPayload.filename = input.file.fileName;
     }
-    const waMessageId = await callGraphSend(credentials!, {
+    const waMessageId = await sendWhatsAppPayload(target.connection!, {
       messaging_product: "whatsapp",
       ...target.destinatario,
       type: kind,
@@ -415,7 +395,7 @@ export async function sendMediaMessage(input: {
       sendErr = err;
     } else if (err instanceof MetaApiError && err.isAuthError) {
       // Mismo criterio que el texto: SOLO 401/código 190 (fix 2026-08-04).
-      await markReconnectRequired(input.organizationId);
+      await markConnectionReconnectRequired(target.connection!);
       sendErr = new SendError(
         "reconnect_required",
         "El token de WhatsApp expiró: reconecta el número en Configuración"
@@ -468,7 +448,7 @@ export async function sendStructured(
   );
   // Ubicaciones y contactos son mensajes de WhatsApp: en los demás canales no
   // hay credenciales de WhatsApp que usar y Graph los rechazaría.
-  if (!target.credentials) {
+  if (!target.connection) {
     throw new SendError(
       "meta_error",
       "Este canal no admite ubicaciones ni contactos; manda el texto"
@@ -486,7 +466,7 @@ export async function sendStructured(
           })),
         };
 
-  const waMessageId = await callGraphSend(target.credentials, {
+  const waMessageId = await sendWhatsAppPayload(target.connection, {
     messaging_product: "whatsapp",
     ...target.destinatario,
     ...payload,
@@ -518,38 +498,6 @@ export async function sendStructured(
   });
   return { messageId };
 }
-
-/** Llama a Graph /messages y traduce errores de Meta a SendError. */
-export async function callGraphSend(
-  credentials: Credentials,
-  payload: unknown
-): Promise<string> {
-  try {
-    const res = await graphRequest<{ messages?: { id: string }[] }>(
-      `${credentials.phoneNumberId}/messages`,
-      { method: "POST", token: credentials.token, body: payload }
-    );
-    const id = res.messages?.[0]?.id;
-    if (!id) throw new SendError("meta_error", "Meta no devolvió ID de mensaje");
-    return id;
-  } catch (err) {
-    if (err instanceof MetaApiError) {
-      if (err.isAuthError) {
-        await markReconnectRequired(credentials.organizationId);
-        throw new SendError(
-          "reconnect_required",
-          "El token de WhatsApp expiró: reconecta el número en Configuración"
-        );
-      }
-      if (err.status === 0 || err.status >= 500) {
-        throw new SendError("meta_unavailable", "Meta no está disponible ahora");
-      }
-      throw new SendError("meta_error", err.message);
-    }
-    throw err;
-  }
-}
-
 
 /**
  * 014 — Envío por el canal de Instagram. Traduce los fallos al mismo
@@ -657,3 +605,6 @@ async function callMessengerSend(
     throw err;
   }
 }
+
+// Reexportados: otros módulos y tests importan estos nombres desde aquí.
+export { SendError, callGraphSend };

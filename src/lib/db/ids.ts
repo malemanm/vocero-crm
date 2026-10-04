@@ -25,6 +25,8 @@ const prefixes = {
   offeredSlot: "ofs",
   zoomCredentials: "zcred",
   googleCredentials: "gcred",
+  // 020 — WhatsApp por YCloud
+  ycCredentials: "yccred",
   // 016 — atribución de anuncios
   adAttribution: "att",
   conversionEvent: "cve",

@@ -3,7 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { sendBusinessMessagingEvent } from "@/lib/meta/capi";
-import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
+import { wabaIdForOrg } from "@/server/whatsapp/connection";
 import { atribucionEnabled } from "@/server/attribution/flag";
 import { getCapiSettings } from "@/server/attribution/settings";
 import { getAttributionForConversation } from "@/server/attribution/store";
@@ -75,9 +75,9 @@ export async function emitConversion(
       conversationId
     );
     const settings = await getCapiSettings(organizationId);
-    const credentials = await getCredentialsByOrg(organizationId);
+    const wabaId = await wabaIdForOrg(organizationId);
 
-    if (!attribution?.ctwaClid || !settings || !credentials) {
+    if (!attribution?.ctwaClid || !settings || !wabaId) {
       await db
         .update(schema.conversionEvent)
         .set({
@@ -97,7 +97,7 @@ export async function emitConversion(
           eventName,
           eventTime: Math.floor(Date.now() / 1000),
           ctwaClid: attribution.ctwaClid,
-          wabaId: credentials.wabaId,
+          wabaId,
           customData,
         },
       });

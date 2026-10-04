@@ -1,6 +1,7 @@
 import { withAuth } from "@/lib/api";
 import { getEnv } from "@/lib/env";
 import { isChannelEnabled } from "@/server/channels/enabled";
+import { ycloudEnabled } from "@/server/whatsapp/providers-flag";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,10 @@ export const GET = withAuth(async () => {
       : null,
     messengerUrl: isChannelEnabled("messenger")
       ? `${base}/api/webhooks/messenger/${env.META_WEBHOOK_VERIFY_TOKEN}`
+      : null,
+    // 020: la URL de YCloud, solo si el proveedor está encendido.
+    ycloudUrl: ycloudEnabled()
+      ? `${base}/api/webhooks/yc/${env.META_WEBHOOK_VERIFY_TOKEN}`
       : null,
     verifyToken: env.META_WEBHOOK_VERIFY_TOKEN,
     isHttps: url.startsWith("https://"),

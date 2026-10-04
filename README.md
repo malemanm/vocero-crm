@@ -371,6 +371,14 @@ del cliente se conecta con el **override de callback por WABA**:
 > Graph** (botón "Sincronizar" en Configuración → Plantillas), así el modo
 > agencia ve las aprobaciones igual.
 
+## WhatsApp por YCloud (opcional)
+
+Si tu número está en [YCloud](https://www.ycloud.com), puedes conectarlo con su
+API key en vez de crear una app de desarrollador en Meta. Se enciende con
+`WHATSAPP_PROVIDERS=meta,ycloud` y se conecta en **Configuración → YCloud**; el
+webhook se registra solo. Una instancia usa Meta directo **o** YCloud. Guía en
+[`docs/ycloud.md`](docs/ycloud.md).
+
 ## Canales opcionales: Instagram y Messenger
 
 WhatsApp es el canal por el que existe Vocero y siempre está encendido. Los

@@ -58,7 +58,8 @@ a propósito: la imagen ya la trae (`/data/media`, dentro del volumen de `/data`
 Opcionales, que NO se preguntan (el usuario los agrega después; la guía de
 cada uno está en `.env.example`): `META_APP_SECRET`, `BOT_API_KEY` y
 `BRAIN_HEALTH_URL` (un cerebro externo como Nea), `AGENDA=on`,
-`ATRIBUCION=on` y `CHANNELS`.
+`ATRIBUCION=on`, `CHANNELS` y `WHATSAPP_PROVIDERS=meta,ycloud`
+(conectar el número con la API key de YCloud en vez de Meta directo).
 
 ## Ruta A — Coolify (con el MCP de Coolify)
 

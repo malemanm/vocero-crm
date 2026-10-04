@@ -6,6 +6,8 @@ import {
   tokenLast4,
 } from "@/server/whatsapp/credentials";
 import { subscribeAppToWaba, testConnection } from "@/server/whatsapp/connect";
+import { ycloudEnabled } from "@/server/whatsapp/providers-flag";
+import { getYCloudCredentialsByOrg } from "@/server/ycloud/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,18 @@ const putSchema = z.object({
 export const PUT = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
+
+  // 020: una organización usa Meta o YCloud, no ambos a la vez.
+  if (
+    ycloudEnabled() &&
+    (await getYCloudCredentialsByOrg(session.organizationId))
+  ) {
+    return apiError(
+      409,
+      "provider_conflict",
+      "Ya hay un número conectado por YCloud. Desconéctalo primero para usar Meta directo."
+    );
+  }
 
   const check = await testConnection(body.data.phoneNumberId, body.data.token);
   if (!check.ok) {
