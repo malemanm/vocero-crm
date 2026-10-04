@@ -181,7 +181,7 @@ describe("un commit que no salió del build se presenta como NO verificado", () 
         getDb: () => ({ execute: async () => [] }),
       }));
       const { GET } = await import("@/app/api/health/route");
-      return (await GET()).json();
+      return (await GET(new Request("http://localhost/api/health"))).json();
     }
 
     it("commit del build → commitVerified: true", async () => {

@@ -4,7 +4,7 @@ import { APP_VERSION, resolveCommit } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req?: Request) {
+export async function GET(req: Request) {
   try {
     await getDb().execute(sql`select 1`);
     // La versión viaja aquí a propósito: confirmar un despliegue tiene que
@@ -29,7 +29,7 @@ export async function GET(req?: Request) {
     // operador (HEALTH_DIAG_TOKEN); sin él, la respuesta pública es la misma.
     const diag = process.env.HEALTH_DIAG_TOKEN;
     const detail =
-      diag && req?.headers.get("x-diag-token") === diag
+      diag && req.headers.get("x-diag-token") === diag
         ? String((err as Error)?.message ?? err).slice(0, 300)
         : undefined;
     return Response.json(
