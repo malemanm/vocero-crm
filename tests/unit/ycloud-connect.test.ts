@@ -43,6 +43,12 @@ describe("testYCloudConnection", () => {
       code: "invalid_key",
     });
   });
+  it("403 al conectar → invalid_key (la key no tiene permisos)", async () => {
+    const { YCloudApiError } = await import("@/lib/ycloud/client");
+    ycloudRequest.mockRejectedValue(new YCloudApiError("no", { status: 403 }));
+    const { testYCloudConnection } = await import("@/server/ycloud/connect");
+    expect(await testYCloudConnection("K", "+5215512345678")).toMatchObject({ ok: false, code: "invalid_key" });
+  });
   it("red o 5xx → provider_unavailable", async () => {
     const { YCloudApiError } = await import("@/lib/ycloud/client");
     const { testYCloudConnection } = await import("@/server/ycloud/connect");

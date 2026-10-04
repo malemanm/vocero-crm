@@ -74,6 +74,17 @@ describe("sendWhatsAppPayload · ycloud", () => {
       to: "+5215598765432",
     });
   });
+  it("respuesta con solo `id` (sin wamid) → SendError: los estados llegarían con otro id", async () => {
+    ycloudRequest.mockResolvedValue({ id: "ym_solo_id" });
+    const { sendWhatsAppPayload } = await import("@/server/whatsapp/connection");
+    await expect(sendWhatsAppPayload(conn, payload)).rejects.toMatchObject({ code: "meta_error" });
+  });
+  it("403 NO bloquea el canal: error de ese envío, sin reconnect_required", async () => {
+    const { YCloudApiError } = await import("@/lib/ycloud/client");
+    ycloudRequest.mockRejectedValue(new YCloudApiError("sin permiso para este envío", { status: 403 }));
+    const { sendWhatsAppPayload } = await import("@/server/whatsapp/connection");
+    await expect(sendWhatsAppPayload(conn, payload)).rejects.toMatchObject({ code: "meta_error" });
+  });
   it("200 sin wamid ni id → SendError meta_error", async () => {
     ycloudRequest.mockResolvedValue({});
     const { sendWhatsAppPayload } = await import("@/server/whatsapp/connection");
@@ -98,5 +109,28 @@ describe("sendWhatsAppPayload · ycloud", () => {
         code: "meta_unavailable",
       });
     }
+  });
+});
+
+describe("wabaIdForOrg (CAPI no depende del proveedor)", () => {
+  it("Meta → su wabaId", async () => {
+    getCredentialsByOrg.mockResolvedValue({ organizationId: "o", token: "t", wabaId: "WM" });
+    const { wabaIdForOrg } = await import("@/server/whatsapp/connection");
+    expect(await wabaIdForOrg("o")).toBe("WM");
+  });
+  it("YCloud → su wabaId", async () => {
+    flag = true;
+    getCredentialsByOrg.mockResolvedValue(null);
+    getYCloudCredentialsByOrg.mockResolvedValue({ ...yc, wabaId: "WY" });
+    const { wabaIdForOrg } = await import("@/server/whatsapp/connection");
+    expect(await wabaIdForOrg("o")).toBe("WY");
+  });
+  it("sin conexión o sin wabaId → null", async () => {
+    getCredentialsByOrg.mockResolvedValue(null);
+    const { wabaIdForOrg } = await import("@/server/whatsapp/connection");
+    expect(await wabaIdForOrg("o")).toBeNull();
+    flag = true;
+    getYCloudCredentialsByOrg.mockResolvedValue({ ...yc, wabaId: null });
+    expect(await wabaIdForOrg("o")).toBeNull();
   });
 });

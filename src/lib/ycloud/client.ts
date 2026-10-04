@@ -21,10 +21,14 @@ export class YCloudApiError extends Error {
     this.details = opts.details;
   }
 
-  /** Key inválida o revocada. Un 5xx nunca cuenta: es el proveedor, no la key. */
+  /**
+   * Key inválida o revocada: SOLO 401. Un 403 puede ser un permiso de una
+   * operación o de un destinatario, y tratarlo como key muerta apagaría todo el
+   * canal por un envío (mismo criterio que Meta, fix 2026-08-04). Un 5xx nunca
+   * cuenta: es el proveedor, no la key.
+   */
   get isAuthError(): boolean {
-    if (this.status >= 500) return false;
-    return this.status === 401 || this.status === 403;
+    return this.status === 401;
   }
 }
 

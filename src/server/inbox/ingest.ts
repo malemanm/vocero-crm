@@ -522,7 +522,13 @@ export function serializeMessage(
           fileSize: media.fileSize,
           caption: media.caption,
           fetchStatus: media.fetchStatus,
-          payload: media.payload,
+          // Ubicación y contactos SON el contenido del mensaje; en un adjunto
+          // binario el payload guarda la URL de descarga del proveedor (una
+          // capacidad) y no debe llegar al navegador.
+          payload:
+            media.kind === "location" || media.kind === "contacts"
+              ? media.payload
+              : null,
         }
       : null,
     createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),

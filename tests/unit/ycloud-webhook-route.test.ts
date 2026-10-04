@@ -52,8 +52,16 @@ describe("POST /api/webhooks/yc/[token]", () => {
     processYCloudWebhook.mockResolvedValue("ok");
     expect((await call("verify-test-token")).status).toBe(200);
   });
-  it("un error al procesar no tumba la respuesta: 200", async () => {
+  it("un error al procesar responde 500 para que YCloud reintente (no se pierde el mensaje)", async () => {
     processYCloudWebhook.mockRejectedValue(new Error("boom"));
-    expect((await call("verify-test-token")).status).toBe(200);
+    expect((await call("verify-test-token")).status).toBe(500);
+  });
+  it("si la ingesta tarda más que la espera, responde 200 y sigue en segundo plano", async () => {
+    vi.useFakeTimers();
+    processYCloudWebhook.mockReturnValue(new Promise(() => {}));
+    const p = call("verify-test-token");
+    await vi.advanceTimersByTimeAsync(4_500);
+    expect((await p).status).toBe(200);
+    vi.useRealTimers();
   });
 });

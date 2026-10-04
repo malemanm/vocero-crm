@@ -34,6 +34,14 @@ export async function getWhatsAppConnection(
   return yc ? { provider: "ycloud", creds: yc } : null;
 }
 
+/** WABA de la conexión activa, sea cual sea el proveedor (la CAPI lo necesita). */
+export async function wabaIdForOrg(
+  organizationId: string
+): Promise<string | null> {
+  const conn = await getWhatsAppConnection(organizationId);
+  return conn?.creds.wabaId ?? null;
+}
+
 export async function markConnectionReconnectRequired(
   conn: WhatsAppConnection
 ): Promise<void> {
@@ -76,11 +84,15 @@ export async function sendWhatsAppPayload(
         body: toYCloudSendBody(payload, conn.creds.phone),
       }
     );
-    const id = res?.wamid ?? res?.id;
-    if (!id) {
-      throw new SendError("meta_error", "YCloud no devolvió ID de mensaje");
+    // Solo el wamid: es el id con el que luego llegan los estados. Guardar el
+    // id interno de YCloud dejaría el mensaje "enviado" para siempre.
+    if (!res?.wamid) {
+      throw new SendError(
+        "meta_error",
+        "YCloud no devolvió el ID de WhatsApp del mensaje"
+      );
     }
-    return id;
+    return res.wamid;
   } catch (err) {
     if (err instanceof SendError) throw err;
     return ycloudSendError(err, conn.creds.organizationId);

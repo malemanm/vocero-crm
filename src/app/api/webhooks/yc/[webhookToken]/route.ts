@@ -27,21 +27,26 @@ export async function POST(req: Request, { params }: Params) {
   const rawBody = await req.text();
   const signature = req.headers.get("ycloud-signature");
 
-  // YCloud reintenta hasta 7 veces y pide respuesta en < 6 s: se espera el
-  // veredicto de la firma (rápido) hasta 4 s; si la ingesta tarda más, sigue en
-  // after() y el 200 sale igual.
-  const result: { verdict: "ok" | "bad_signature" | "ignored" } = {
-    verdict: "ignored",
-  };
+  // YCloud pide respuesta en < 6 s: se espera el procesamiento hasta 4 s; si
+  // tarda más, sigue en after() y el 200 sale igual.
+  const result: {
+    verdict: "ok" | "bad_signature" | "ignored";
+    failed: boolean;
+  } = { verdict: "ignored", failed: false };
   const work = (async () => {
     try {
       result.verdict = await processYCloudWebhook(rawBody, signature);
     } catch (err) {
+      result.failed = true;
       console.error("[webhook-yc] error procesando evento:", err);
     }
   })();
   after(() => work);
   await Promise.race([work, new Promise((r) => setTimeout(r, 4_000))]);
   if (result.verdict === "bad_signature") return new Response(null, { status: 401 });
+  // Si falló ANTES de responder (BD caída, etc.) se avisa con 500: YCloud
+  // reintenta hasta 7 veces y el procesamiento es idempotente. Con 200 el
+  // mensaje se perdería para siempre.
+  if (result.failed) return new Response(null, { status: 500 });
   return Response.json({ received: true });
 }

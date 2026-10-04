@@ -90,10 +90,12 @@ tienen una API key. Para ellos Vocero es inalcanzable sin rehacer su alta.
   Nunca se asume que hay teléfono.
 - **FR-309** Cliente único `src/lib/ycloud/client.ts` (único punto de salida
   hacia `api.ycloud.com/v2`, header `X-API-Key`, timeouts, errores tipados).
-  Mapeo de errores a los códigos que ya entiende la UI: 401/403 →
-  `reconnect_required`; ventana cerrada → `window_closed`; plantilla requerida
-  → mismo mensaje que hoy; 5xx/red → `meta_unavailable` (renombrado lógico a
-  «proveedor no disponible» en el mensaje al operador).
+  Mapeo de errores a los códigos que ya entiende la UI: **401** →
+  `reconnect_required` (un 403 es el error de esa operación, no una key muerta:
+  mismo criterio que Meta, fix 2026-08-04); ventana cerrada → `window_closed`;
+  plantilla requerida → mismo mensaje que hoy; 5xx/red → `meta_unavailable`
+  (renombrado lógico a «proveedor no disponible» en el mensaje al operador).
+  Al *conectar*, un 403 sí cuenta como key sin permisos (`invalid_key`).
 - **FR-310** Conexión (`POST /api/settings/ycloud`, solo propietario): valida
   la key con una lectura, registra el webhook (`POST /v2/webhookEndpoints`,
   eventos de mensaje entrante, actualización y plantillas), guarda el secreto
@@ -143,6 +145,11 @@ enmienda con lo que se encuentre:
    header `X-API-Key` y su caducidad.
 3. Existencia del indicador de «escribiendo…».
 4. Forma exacta del evento de estado de plantilla y del objeto `referral`.
+5. Que la respuesta de `sendDirectly` traiga el `wamid` (Vocero lo exige: es
+   el id con el que luego llegan los estados) y que `markAsRead` lo acepte como
+   `{id}` (la documentación dice que sí).
+6. Que una descarga de adjunto por URL de YCloud no redirija a un host que
+   exija otra autenticación (Vocero sigue las redirecciones sin la API key).
 
 ## Criterios de éxito
 

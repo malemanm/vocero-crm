@@ -40,6 +40,14 @@ Vocero y los eventos de mensajes y plantillas de WhatsApp, y pega el secreto que
 YCloud te da en Vocero → **Guardar secreto**. Mientras falte el secreto, los
 mensajes entrantes se rechazan: la firma es obligatoria.
 
+## Una cuenta de YCloud, una instancia de Vocero
+
+Los endpoints de webhook de YCloud son **de la cuenta**: reciben los eventos de
+todos sus números. Por eso una cuenta de YCloud debe conectarse a UNA sola
+instancia de Vocero. Si dos instancias (o dos organizaciones) comparten la
+cuenta, cada una recibiría los eventos de la otra, los rechazaría por firma y
+YCloud reintentaría hasta desactivar el endpoint. Un negocio, una cuenta.
+
 ## Una instancia, un proveedor
 
 Una organización usa Meta directo **o** YCloud, no los dos. Para cambiar:
@@ -48,6 +56,9 @@ y conecta el otro. Intentar conectar uno con el otro activo responde 409.
 
 ## Cómo se comporta
 
+- **Adjuntos entrantes**: Vocero los descarga de la URL que trae el webhook y
+  solo envía tu API key a `ycloud.com`, por https; un enlace a una red privada
+  se rechaza.
 - **Entrantes**: llegan firmados (`YCloud-Signature`, HMAC-SHA256 con tolerancia
   de 5 minutos). Una firma inválida se rechaza con 401 y no deja rastro. Los
   reintentos de YCloud no duplican mensajes.
@@ -59,8 +70,13 @@ y conecta el otro. Intentar conectar uno con el otro activo responde 409.
   plantillas desde Vocero no está disponible con YCloud.
 - **«Escribiendo…»**: con YCloud solo se marca el mensaje como leído.
 - **Si YCloud falla**: el operador ve el error y el CRM sigue funcionando; si la
-  key se revoca, la conexión queda en «reconectar» y el envío se pausa hasta
-  pegar una nueva.
+  key se revoca (401), la conexión queda en «reconectar» y el envío se pausa
+  hasta pegar una nueva. Un 403 de una operación suelta no pausa el canal.
+- **Si el procesamiento de un evento falla** (p. ej. la base no responde),
+  Vocero contesta 500 para que YCloud lo reintente; la ingesta es idempotente.
+- **Reconectar** registra el webhook nuevo antes de borrar el viejo, así una
+  falla a medias no te deja sin recepción.
+- **Atribución (CAPI)** funciona igual con YCloud: usa el WABA de la conexión.
 
 ## Pruebas
 

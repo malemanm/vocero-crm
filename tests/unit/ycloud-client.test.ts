@@ -29,6 +29,14 @@ describe("ycloudRequest", () => {
     expect(err.isAuthError).toBe(true);
   });
 
+  it("403 NO es error de autenticación (un permiso de una operación no apaga el canal)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: "forbidden" }), { status: 403 })));
+    const { ycloudRequest } = await import("@/lib/ycloud/client");
+    const err = (await ycloudRequest("/x", { apiKey: "K" }).catch((e) => e)) as InstanceType<typeof import("@/lib/ycloud/client").YCloudApiError>;
+    expect(err.isAuthError).toBe(false);
+    expect(err.status).toBe(403);
+  });
+
   it("5xx jamás es error de autenticación", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("boom", { status: 503 })));
     const { ycloudRequest } = await import("@/lib/ycloud/client");

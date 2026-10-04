@@ -1,6 +1,6 @@
 import { apiError } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
-import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
+import { getWhatsAppConnection } from "@/server/whatsapp/connection";
 import { downloadGraphMedia, MediaFetchError } from "@/server/whatsapp/media";
 
 export const dynamic = "force-dynamic";
@@ -26,10 +26,20 @@ export async function GET(
   if (!organizationId) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
   }
-  const creds = await getCredentialsByOrg(organizationId);
-  if (!creds) {
+  const conn = await getWhatsAppConnection(organizationId);
+  if (!conn) {
     return apiError(409, "no_connection", "WhatsApp no está conectado");
   }
+  if (conn.provider === "ycloud") {
+    // 020: con YCloud el adjunto llega con su URL en el webhook y Vocero ya lo
+    // descargó; no hay un mediaId de Graph que pedir por aquí.
+    return apiError(
+      501,
+      "not_supported_by_provider",
+      "Con YCloud este endpoint no está disponible: Vocero ya descargó el adjunto"
+    );
+  }
+  const creds = conn.creds;
 
   const { mediaId } = await ctx.params;
   if (!/^[\w.-]{1,64}$/.test(mediaId)) {

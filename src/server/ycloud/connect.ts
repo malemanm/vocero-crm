@@ -44,7 +44,8 @@ export async function testYCloudConnection(
     return { ok: true, wabaId: hit.wabaId ?? null };
   } catch (err) {
     if (err instanceof YCloudApiError) {
-      if (err.isAuthError) {
+      // Al conectar, 403 también es una key sin permisos para listar los números.
+      if (err.isAuthError || err.status === 403) {
         return {
           ok: false,
           code: "invalid_key",

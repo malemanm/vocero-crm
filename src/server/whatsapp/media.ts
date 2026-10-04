@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { isMockEnabled } from "@/lib/env";
 import { graphRequest, MetaApiError } from "@/lib/meta/client";
 import { getWhatsAppConnection } from "@/server/whatsapp/connection";
 import type { YCloudCredentials } from "@/server/ycloud/credentials";
@@ -210,10 +211,59 @@ export async function downloadGraphMedia(
   };
 }
 
+/** Host de YCloud: el propio dominio o un subdominio, NUNCA un sufijo suelto. */
+function isYCloudHost(host: string): boolean {
+  return host === "ycloud.com" || host.endsWith(".ycloud.com");
+}
+
+/** Loopback, redes privadas, link-local y nombres internos: no son un adjunto. */
+function isPrivateHost(rawHost: string): boolean {
+  const h = rawHost.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    h === "localhost" ||
+    h.endsWith(".localhost") ||
+    h.endsWith(".local") ||
+    h.endsWith(".internal")
+  ) {
+    return true;
+  }
+  if (h.includes(":")) {
+    return (
+      h === "::1" ||
+      h === "::" ||
+      /^f[cd]/.test(h) ||
+      h.startsWith("fe80") ||
+      h.startsWith("::ffff:")
+    );
+  }
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    );
+  }
+  return false;
+}
+
+const MAX_MEDIA_REDIRECTS = 3;
+
 /**
  * 020 — Descarga un adjunto entrante de YCloud desde la URL que trajo el
- * webhook (guardada en `payload.link`). La API key solo viaja a hosts de
- * YCloud, jamás a una URL arbitraria.
+ * webhook (guardada en `payload.link`).
+ *
+ * - La API key solo viaja a `ycloud.com` y sus subdominios, por https, y se
+ *   re-evalúa en CADA salto: una redirección a un CDN de terceros se sigue sin
+ *   la key (el fetch por defecto la reenviaría).
+ * - Una URL que apunta a una red privada se rechaza (SSRF). La excepción es el
+ *   loopback del self-test, y solo con los mocks encendidos fuera de producción.
  */
 export async function downloadYCloudMedia(
   creds: YCloudCredentials,
@@ -222,16 +272,51 @@ export async function downloadYCloudMedia(
 ): Promise<{ data: Buffer; mimeType: string | null; fileSize: number }> {
   const link = (asset.payload as { link?: string } | null)?.link;
   if (!link) throw new MediaFetchError("YCloud no entregó URL del adjunto");
-  let res: Response;
+
+  let url: URL;
   try {
-    const trusted = new URL(link).hostname.endsWith("ycloud.com");
-    res = await fetch(link, {
-      headers: trusted ? { "X-API-Key": creds.apiKey } : {},
-      signal: AbortSignal.timeout(30_000),
-    });
+    url = new URL(link);
   } catch {
-    throw new MediaFetchError("No se pudo descargar el adjunto");
+    throw new MediaFetchError("La URL del adjunto no es válida");
   }
+
+  let res: Response | null = null;
+  for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
+    const loopbackOk =
+      isMockEnabled() &&
+      (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+    if (!loopbackOk) {
+      if (url.protocol !== "https:") {
+        throw new MediaFetchError("La URL del adjunto no es https");
+      }
+      if (isPrivateHost(url.hostname)) {
+        throw new MediaFetchError("La URL del adjunto apunta a una red privada");
+      }
+    }
+    const trusted = url.protocol === "https:" && isYCloudHost(url.hostname);
+    try {
+      res = await fetch(url, {
+        headers: trusted ? { "X-API-Key": creds.apiKey } : {},
+        redirect: "manual",
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new MediaFetchError("No se pudo descargar el adjunto");
+    }
+    const location = res.headers.get("location");
+    if (res.status >= 300 && res.status < 400 && location) {
+      try {
+        url = new URL(location, url);
+      } catch {
+        throw new MediaFetchError("Redirección inválida del adjunto");
+      }
+      res = null;
+      continue;
+    }
+    break;
+  }
+  if (!res) throw new MediaFetchError("Demasiadas redirecciones al descargar el adjunto");
+
   if (!res.ok) {
     throw new MediaFetchError(
       `La descarga devolvió ${res.status}`,
@@ -287,6 +372,8 @@ export async function ensureAssetAvailable(
         fileSize,
         fetchStatus: "available",
         fetchError: null,
+        // La URL de descarga de YCloud ya cumplió: no se conserva.
+        payload: null,
         updatedAt: new Date(),
       })
       .where(eq(schema.mediaAsset.id, assetId))

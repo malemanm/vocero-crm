@@ -9,6 +9,7 @@ import {
   apiKeyLast4,
   deleteYCloudCredentials,
   getYCloudCredentialsByOrg,
+  getYCloudCredentialsByPhone,
   saveYCloudCredentials,
 } from "@/server/ycloud/credentials";
 import {
@@ -66,31 +67,57 @@ export const PUT = withAuth(async (session, req: Request) => {
     );
   }
 
+  // El número es único en la instancia: otra organización que ya lo tenga
+  // haría fallar el guardado DESPUÉS de registrar un webhook en YCloud.
+  const owner = await getYCloudCredentialsByPhone(body.data.phone);
+  if (owner && owner.organizationId !== session.organizationId) {
+    return apiError(
+      409,
+      "phone_in_use",
+      "Ese número ya está conectado en otra organización de esta instancia."
+    );
+  }
+
   const check = await testYCloudConnection(body.data.apiKey, body.data.phone);
   if (!check.ok) {
     const status = check.code === "provider_unavailable" ? 503 : 422;
     return apiError(status, check.code, check.message);
   }
 
-  // Reconectar no debe dejar endpoints viejos activos en YCloud: seguirían
-  // entregando a esta misma URL con un secreto que Vocero ya no tiene.
+  // Orden deliberado al reconectar: registrar el webhook NUEVO, guardar, y solo
+  // entonces borrar el viejo. Si algo falla en medio, el viejo (que funcionaba)
+  // sigue en pie y no queda un endpoint huérfano en YCloud.
   const previous = await getYCloudCredentialsByOrg(session.organizationId);
-  if (previous?.webhookId) {
-    await unregisterWebhook(previous.apiKey, previous.webhookId);
-  }
-
   const url = webhookUrl();
   const reg = await registerWebhook(body.data.apiKey, url);
 
-  await saveYCloudCredentials({
-    organizationId: session.organizationId,
-    phone: body.data.phone,
-    apiKey: body.data.apiKey,
-    wabaId: check.wabaId,
-    webhookId: reg.ok ? reg.id : null,
-    webhookSecret: reg.ok ? reg.secret : null,
-    webhookStatus: reg.ok ? "registered" : "pending",
-  });
+  // Si el registro falla pero ya había un webhook sano, se conserva.
+  const keep =
+    !reg.ok && previous?.webhookId && previous.webhookSecret ? previous : null;
+  const webhookId = reg.ok ? reg.id : (keep?.webhookId ?? null);
+  const webhookSecret = reg.ok ? reg.secret : (keep?.webhookSecret ?? null);
+  const webhookStatus: "registered" | "pending" =
+    reg.ok || keep ? "registered" : "pending";
+
+  try {
+    await saveYCloudCredentials({
+      organizationId: session.organizationId,
+      phone: body.data.phone,
+      apiKey: body.data.apiKey,
+      wabaId: check.wabaId,
+      webhookId,
+      webhookSecret,
+      webhookStatus,
+    });
+  } catch (err) {
+    console.error("[ycloud] no se pudo guardar la conexión:", err);
+    if (reg.ok) await unregisterWebhook(body.data.apiKey, reg.id);
+    return apiError(500, "save_failed", "No se pudo guardar la conexión; intenta de nuevo");
+  }
+
+  if (reg.ok && previous?.webhookId) {
+    await unregisterWebhook(previous.apiKey, previous.webhookId);
+  }
 
   // Mejor esfuerzo: las plantillas del negocio no condicionan la conexión.
   try {
@@ -104,7 +131,7 @@ export const PUT = withAuth(async (session, req: Request) => {
 
   return Response.json({
     ok: true,
-    webhook: reg.ok ? "registered" : "pending",
+    webhook: webhookStatus,
     webhookUrl: url,
     ...(reg.ok ? {} : { webhookError: reg.message }),
   });
