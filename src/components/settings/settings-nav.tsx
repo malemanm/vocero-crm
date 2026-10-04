@@ -22,6 +22,9 @@ const ADS_TAB: Tab = { href: "/settings/ads", label: "Anuncios" };
 /** 017 — "Messenger" solo si el canal está encendido con CHANNELS. */
 const MESSENGER_TAB: Tab = { href: "/settings/messenger", label: "Messenger" };
 
+/** 014 — "Instagram" solo si el canal está encendido con CHANNELS. */
+const INSTAGRAM_TAB: Tab = { href: "/settings/instagram", label: "Instagram" };
+
 /** 020 — "YCloud" solo si el proveedor está encendido con WHATSAPP_PROVIDERS. */
 const YCLOUD_TAB: Tab = { href: "/settings/ycloud", label: "YCloud" };
 
@@ -29,6 +32,7 @@ type NavFlags = {
   agenda?: boolean;
   atribucion?: boolean;
   messenger?: boolean;
+  instagram?: boolean;
   ycloud?: boolean;
 };
 
@@ -41,12 +45,14 @@ export function settingsTabs({
   agenda = false,
   atribucion = false,
   messenger = false,
+  instagram = false,
   ycloud = false,
 }: NavFlags): Tab[] {
   return [
     ...TABS.slice(0, 1),
     ...(ycloud ? [YCLOUD_TAB] : []),
     ...(messenger ? [MESSENGER_TAB] : []),
+    ...(instagram ? [INSTAGRAM_TAB] : []),
     ...TABS.slice(1),
     ...(agenda ? [AGENDA_TAB] : []),
     ...(atribucion ? [ADS_TAB] : []),
