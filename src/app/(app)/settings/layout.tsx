@@ -23,6 +23,7 @@ export default function SettingsLayout({
           agenda={agendaEnabled()}
           atribucion={atribucionEnabled()}
           messenger={isChannelEnabled("messenger")}
+          instagram={isChannelEnabled("instagram")}
           ycloud={ycloudEnabled()}
         />
         <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
