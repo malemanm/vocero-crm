@@ -4,7 +4,7 @@ import { APP_VERSION, resolveCommit } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req?: Request) {
   try {
     await getDb().execute(sql`select 1`);
     // La versión viaja aquí a propósito: confirmar un despliegue tiene que
@@ -25,8 +25,22 @@ export async function GET() {
     });
   } catch (err) {
     console.error("[health] BD no disponible:", err);
+    // Diagnóstico temporal: el detalle solo sale con el token secreto del
+    // operador (HEALTH_DIAG_TOKEN); sin él, la respuesta pública es la misma.
+    const diag = process.env.HEALTH_DIAG_TOKEN;
+    const detail =
+      diag && req?.headers.get("x-diag-token") === diag
+        ? String((err as Error)?.message ?? err).slice(0, 300)
+        : undefined;
     return Response.json(
-      { ok: false, error: { code: "db_unavailable", message: "Base de datos no disponible" } },
+      {
+        ok: false,
+        error: {
+          code: "db_unavailable",
+          message: "Base de datos no disponible",
+          ...(detail ? { detail } : {}),
+        },
+      },
       { status: 503 }
     );
   }
