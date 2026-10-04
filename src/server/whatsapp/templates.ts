@@ -15,7 +15,11 @@ import {
   getCredentialsByWabaId,
   markReconnectRequired,
 } from "@/server/whatsapp/credentials";
-import { callGraphSend, SendError } from "@/server/inbox/send";
+import { SendError } from "@/server/inbox/send";
+import {
+  getWhatsAppConnection,
+  sendWhatsAppPayload,
+} from "@/server/whatsapp/connection";
 import { serializeMessage } from "@/server/inbox/ingest";
 import type { WebhookValue } from "@/server/inbox/webhook";
 
@@ -337,9 +341,9 @@ export async function sendTemplate(input: {
     );
   }
 
-  const creds = await getCredentialsByOrg(input.organizationId);
-  if (!creds) throw new TemplateError("not_connected", "Sin número conectado");
-  if (creds.status === "reconnect_required") {
+  const conn = await getWhatsAppConnection(input.organizationId);
+  if (!conn) throw new TemplateError("not_connected", "Sin número conectado");
+  if (conn.creds.status === "reconnect_required") {
     throw new TemplateError("reconnect_required", "Reconecta el número");
   }
 
@@ -357,7 +361,7 @@ export async function sendTemplate(input: {
     );
   }
 
-  const waMessageId = await callGraphSend(creds, {
+  const waMessageId = await sendWhatsAppPayload(conn, {
     messaging_product: "whatsapp",
     ...destinatario,
     type: "template",

@@ -1,11 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { getEnv } from "@/lib/env";
 import { graphRequest, MetaApiError } from "@/lib/meta/client";
-import {
-  getCredentialsByOrg,
-  type Credentials,
-} from "@/server/whatsapp/credentials";
+import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 
 /**
  * 008 — Única frontera de media con la Graph API (constitución II: todo el
@@ -267,62 +263,5 @@ export async function ensureAssetAvailable(
   }
 }
 
-/* ---------- Subida a Graph (salientes) ---------- */
-
-/**
- * Sube un archivo a Graph (`POST /{phone_number_id}/media`, multipart) y
- * devuelve el media id para usar en /messages. Errores → MetaApiError (la
- * capa de envío los traduce con las mismas reglas que el texto).
- */
-export async function uploadGraphMedia(
-  credentials: Credentials,
-  file: { data: Buffer | Uint8Array; mimeType: string; fileName?: string }
-): Promise<string> {
-  const env = getEnv();
-  const url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/${credentials.phoneNumberId}/media`;
-  const form = new FormData();
-  form.set("messaging_product", "whatsapp");
-  form.set("type", file.mimeType);
-  const bytes = new Uint8Array(file.data);
-  form.set(
-    "file",
-    new Blob([bytes], { type: file.mimeType }),
-    file.fileName ?? "adjunto"
-  );
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${credentials.token}` },
-      body: form,
-    });
-  } catch (cause) {
-    throw new MetaApiError("No se pudo contactar la API de Meta", {
-      status: 0,
-      details: cause,
-    });
-  }
-  const text = await res.text();
-  let json: unknown = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {}
-  if (!res.ok) {
-    const err = (json as { error?: { message?: string; code?: number; type?: string } })
-      ?.error;
-    throw new MetaApiError(err?.message ?? `Meta respondió ${res.status}`, {
-      status: res.status,
-      code: err?.code ?? null,
-      type: err?.type ?? null,
-      details: json ?? text,
-    });
-  }
-  const id = (json as { id?: string })?.id;
-  if (!id) {
-    throw new MetaApiError("Meta no devolvió ID del media subido", {
-      status: res.status,
-    });
-  }
-  return id;
-}
+// Movido a graph-send.ts (transporte Graph) para no crear un ciclo con connection.ts.
+export { uploadGraphMedia } from "@/server/whatsapp/graph-send";
