@@ -200,6 +200,8 @@ type RemoteTemplate = {
   status?: string;
   category?: string;
   rejected_reason?: string;
+  /** 020: texto del componente BODY (solo lo llena el listado de YCloud). */
+  body?: string;
 };
 
 /** Plantillas de la cuenta en YCloud, en la forma que ya consume el sincronizador. */
@@ -216,6 +218,7 @@ async function listYCloudTemplates(
       status?: string;
       category?: string;
       reason?: string;
+      components?: { type?: string; text?: string }[];
     }[];
   } | null>(`/whatsapp/templates?${qs.toString()}`, { apiKey: creds.apiKey });
   return (res?.items ?? []).map((t) => ({
@@ -225,6 +228,7 @@ async function listYCloudTemplates(
     status: t.status,
     category: t.category,
     rejected_reason: t.reason,
+    body: t.components?.find((c) => c.type?.toUpperCase() === "BODY")?.text,
   }));
 }
 
@@ -284,7 +288,30 @@ export async function syncTemplates(organizationId: string): Promise<number> {
         (remote.id && t.waTemplateId === remote.id) ||
         (t.name === remote.name && t.language === remote.language)
     );
-    if (!match) continue;
+    if (!match) {
+      // 020: con YCloud las plantillas se crean en su panel, no desde Vocero:
+      // se importan aquí. Una sin cuerpo de texto (solo botones, p. ej.) no se
+      // puede enviar desde la bandeja y se omite. Meta conserva su
+      // comportamiento: solo actualiza las que Vocero creó.
+      if (conn.provider === "ycloud" && remote.name && remote.language && remote.body) {
+        await db
+          .insert(schema.template)
+          .values({
+            id: newId("template"),
+            organizationId,
+            name: remote.name,
+            language: remote.language,
+            category: remote.category ?? "UTILITY",
+            body: remote.body,
+            status,
+            rejectionReason: status === "rejected" ? (remote.rejected_reason ?? null) : null,
+            waTemplateId: remote.id ?? null,
+          })
+          .onConflictDoNothing();
+        updated += 1;
+      }
+      continue;
+    }
     // Meta reclasifica la categoría al aprobar (una UTILITY puede volverse
     // MARKETING, lo que cambia el costo por conversación): es autoridad.
     const category = remote.category ?? match.category;

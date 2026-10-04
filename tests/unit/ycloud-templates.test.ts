@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   conn: null as unknown,
   local: [] as unknown[],
   updates: [] as unknown[],
+  inserts: [] as unknown[],
 }));
 const ycloudRequest = vi.fn();
 
@@ -33,6 +34,11 @@ vi.mock("@/lib/db", () => ({
         where: async () => void state.updates.push(v),
       }),
     }),
+    insert: () => ({
+      values: (v: unknown) => ({
+        onConflictDoNothing: async () => void state.inserts.push(v),
+      }),
+    }),
   }),
   schema: {
     template: { organizationId: "o", id: "id", name: "n", language: "l" },
@@ -52,6 +58,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.resetAllMocks();
   state.updates = [];
+  state.inserts = [];
   state.local = [];
   state.conn = {
     provider: "ycloud",
@@ -71,6 +78,42 @@ describe("plantillas por YCloud", () => {
     expect(await syncTemplates("org_1")).toBe(1);
     expect(ycloudRequest.mock.calls[0]![0]).toContain("/whatsapp/templates");
     expect(state.updates[0]).toMatchObject({ status: "approved", category: "MARKETING" });
+  });
+
+  it("syncTemplates IMPORTA las plantillas creadas en el panel de YCloud (con su cuerpo)", async () => {
+    ycloudRequest.mockResolvedValue({
+      items: [
+        {
+          official_id: "off_1", name: "recordatorio", language: "es_MX",
+          status: "APPROVED", category: "UTILITY",
+          components: [
+            { type: "HEADER", format: "TEXT", text: "Hola" },
+            { type: "BODY", text: "Tu cita es mañana {{1}}" },
+          ],
+        },
+        // sin cuerpo de texto (solo botones): no se puede enviar desde Vocero
+        { name: "solo_boton", language: "es_MX", status: "APPROVED", category: "MARKETING", components: [{ type: "BUTTONS" }] },
+      ],
+    });
+    const { syncTemplates } = await import("@/server/whatsapp/templates");
+    expect(await syncTemplates("org_1")).toBe(1);
+    expect(state.inserts).toHaveLength(1);
+    expect(state.inserts[0]).toMatchObject({
+      organizationId: "org_1", name: "recordatorio", language: "es_MX",
+      category: "UTILITY", body: "Tu cita es mañana {{1}}", status: "approved",
+      waTemplateId: "off_1",
+    });
+  });
+
+  it("syncTemplates NO importa en Meta: su comportamiento no cambia", async () => {
+    state.conn = { provider: "meta", creds: { organizationId: "org_1", wabaId: "W", token: "t", status: "connected" } };
+    const graphRequest = vi.fn().mockResolvedValue({ data: [{ name: "x", language: "es", status: "APPROVED" }] });
+    vi.doMock("@/lib/meta/client", async (orig) => ({ ...(await orig<typeof import("@/lib/meta/client")>()), graphRequest }));
+    vi.resetModules();
+    const { syncTemplates } = await import("@/server/whatsapp/templates");
+    expect(await syncTemplates("org_1")).toBe(0);
+    expect(state.inserts).toHaveLength(0);
+    vi.doUnmock("@/lib/meta/client");
   });
 
   it("syncTemplates: YCloud caído → TemplateError meta_unavailable, sin lanzar otra cosa", async () => {
