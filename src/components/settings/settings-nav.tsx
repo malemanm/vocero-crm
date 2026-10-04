@@ -22,26 +22,42 @@ const ADS_TAB: Tab = { href: "/settings/ads", label: "Anuncios" };
 /** 017 — "Messenger" solo si el canal está encendido con CHANNELS. */
 const MESSENGER_TAB: Tab = { href: "/settings/messenger", label: "Messenger" };
 
-export function SettingsNav({
-  agenda = false,
-  atribucion = false,
-  messenger = false,
-}: {
+/** 020 — "YCloud" solo si el proveedor está encendido con WHATSAPP_PROVIDERS. */
+const YCLOUD_TAB: Tab = { href: "/settings/ycloud", label: "YCloud" };
+
+type NavFlags = {
   agenda?: boolean;
   atribucion?: boolean;
   messenger?: boolean;
-}) {
-  const pathname = usePathname();
-  // Qué pestañas existen lo decide el servidor y baja por prop: este es un
-  // componente de cliente y no puede leer variables de entorno.
-  // Messenger va junto a WhatsApp: son las dos conexiones de mensajería.
-  const tabs = [
+  ycloud?: boolean;
+};
+
+/**
+ * Qué pestañas existen. Pura, para poder probarla: WhatsApp y YCloud son las
+ * dos formas de conectar el mismo número, así que van juntas; Messenger es la
+ * otra conexión de mensajería.
+ */
+export function settingsTabs({
+  agenda = false,
+  atribucion = false,
+  messenger = false,
+  ycloud = false,
+}: NavFlags): Tab[] {
+  return [
     ...TABS.slice(0, 1),
+    ...(ycloud ? [YCLOUD_TAB] : []),
     ...(messenger ? [MESSENGER_TAB] : []),
     ...TABS.slice(1),
     ...(agenda ? [AGENDA_TAB] : []),
     ...(atribucion ? [ADS_TAB] : []),
   ];
+}
+
+export function SettingsNav(flags: NavFlags) {
+  const pathname = usePathname();
+  // Qué pestañas existen lo decide el servidor y baja por prop: este es un
+  // componente de cliente y no puede leer variables de entorno.
+  const tabs = settingsTabs(flags);
   return (
     <nav className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 sm:w-44 sm:flex-col sm:space-y-1 sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3">
       {tabs.map((t) => (
