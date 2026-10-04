@@ -110,10 +110,13 @@ tienen una API key. Para ellos Vocero es inalcanzable sin rehacer su alta.
   {phone}/upload`) o por enlace; entrantes se descargan y se guardan en
   Postgres (`media_blob`) como hoy, con los mismos límites por tipo. Un
   adjunto que no se pueda bajar queda `failed` sin tumbar el mensaje.
-- **FR-313** Degradación: si YCloud no responde, el mensaje queda `failed` con
-  motivo visible y el CRM sigue operando; si el agente falla por el proveedor,
-  el turno lo tolera y se reintenta como cualquier hipo. Una función que
-  YCloud no ofrezca (p. ej. «escribiendo…») degrada sin error.
+- **FR-313** Degradación: si YCloud no responde, el operador recibe un error
+  con motivo legible y el CRM sigue operando. Igual que con Meta, un texto
+  rechazado en el acto no crea mensaje; el mensaje queda `failed` con su motivo
+  cuando YCloud lo rechaza *después* (evento `failed`) o cuando falla un
+  adjunto. Si el agente falla por el proveedor, el turno lo tolera y se
+  reintenta como cualquier hipo. Una función que YCloud no ofrezca (p. ej.
+  «escribiendo…») degrada sin error.
 - **FR-314** Sandbox: las conversaciones `is_test` jamás llegan a YCloud; el
   sender lanza excepción igual que hoy (guardrail, no se «arregla»).
 - **FR-315** Multi-tenancy: toda query pasa por `scoped()`. El enrutamiento

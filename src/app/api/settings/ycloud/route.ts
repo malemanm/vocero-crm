@@ -72,6 +72,13 @@ export const PUT = withAuth(async (session, req: Request) => {
     return apiError(status, check.code, check.message);
   }
 
+  // Reconectar no debe dejar endpoints viejos activos en YCloud: seguirían
+  // entregando a esta misma URL con un secreto que Vocero ya no tiene.
+  const previous = await getYCloudCredentialsByOrg(session.organizationId);
+  if (previous?.webhookId) {
+    await unregisterWebhook(previous.apiKey, previous.webhookId);
+  }
+
   const url = webhookUrl();
   const reg = await registerWebhook(body.data.apiKey, url);
 

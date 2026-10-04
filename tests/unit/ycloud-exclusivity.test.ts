@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   deleted: 0,
   test: { ok: true, wabaId: "W1" } as unknown,
   reg: { ok: true, id: "wh_1", secret: "sec" } as unknown,
+  unregistered: [] as unknown[],
 }));
 
 vi.mock("@/lib/auth/session", () => ({
@@ -42,7 +43,7 @@ vi.mock("@/server/ycloud/credentials", () => ({
 vi.mock("@/server/ycloud/connect", () => ({
   testYCloudConnection: async () => state.test,
   registerWebhook: async () => state.reg,
-  unregisterWebhook: vi.fn(),
+  unregisterWebhook: async (...a: unknown[]) => void state.unregistered.push(a),
   webhookUrl: () => "https://crm.ejemplo.com/api/webhooks/yc/tok",
 }));
 vi.mock("@/server/whatsapp/templates", () => ({
@@ -64,6 +65,7 @@ beforeEach(() => {
   state.yc = null;
   state.saved = [];
   state.deleted = 0;
+  state.unregistered = [];
   state.test = { ok: true, wabaId: "W1" };
   state.reg = { ok: true, id: "wh_1", secret: "sec" };
 });
@@ -118,6 +120,17 @@ describe("/api/settings/ycloud", () => {
     expect(json.webhook).toBe("pending");
     expect(json.webhookUrl).toContain("/api/webhooks/yc/");
     expect(state.saved[0]).toMatchObject({ webhookStatus: "pending", webhookSecret: null });
+  });
+  it("al reconectar borra el webhook anterior antes de registrar uno nuevo", async () => {
+    state.yc = { organizationId: "org_1", webhookId: "wh_viejo", apiKey: "K_vieja" };
+    const { PUT } = await import("@/app/api/settings/ycloud/route");
+    expect((await PUT(put(BODY))).status).toBe(200);
+    expect(state.unregistered).toEqual([["K_vieja", "wh_viejo"]]);
+  });
+  it("sin conexión previa no borra nada", async () => {
+    const { PUT } = await import("@/app/api/settings/ycloud/route");
+    await PUT(put(BODY));
+    expect(state.unregistered).toEqual([]);
   });
   it("key inválida → 422 y no guarda", async () => {
     state.test = { ok: false, code: "invalid_key", message: "mala" };
