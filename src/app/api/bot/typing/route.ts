@@ -3,8 +3,9 @@ import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
-import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
+import { getWhatsAppConnection } from "@/server/whatsapp/connection";
 import { graphRequest } from "@/lib/meta/client";
+import { ycloudRequest } from "@/lib/ycloud/client";
 
 export const dynamic = "force-dynamic";
 
@@ -68,15 +69,30 @@ export async function POST(req: Request) {
   const wamid = msgs[0]?.waMessageId;
   if (!wamid) return Response.json({ ok: false, reason: "no_inbound" });
 
-  const creds = await getCredentialsByOrg(organizationId);
-  if (!creds) {
+  const conn = await getWhatsAppConnection(organizationId);
+  if (!conn) {
     return apiError(409, "no_connection", "WhatsApp no está conectado");
   }
 
+  if (conn.provider === "ycloud") {
+    // 020: YCloud expone «marcar leído»; el indicador «escribiendo…» está
+    // pendiente de confirmar con una cuenta real (spec 020), así que degrada
+    // sin error: el bot recibe ok y `typing:false`.
+    try {
+      await ycloudRequest(
+        `/whatsapp/inboundMessages/${encodeURIComponent(wamid)}/markAsRead`,
+        { method: "POST", apiKey: conn.creds.apiKey }
+      );
+      return Response.json({ ok: true, typing: false });
+    } catch {
+      return Response.json({ ok: false, reason: "provider_error" });
+    }
+  }
+
   try {
-    await graphRequest(`${creds.phoneNumberId}/messages`, {
+    await graphRequest(`${conn.creds.phoneNumberId}/messages`, {
       method: "POST",
-      token: creds.token,
+      token: conn.creds.token,
       body: {
         messaging_product: "whatsapp",
         status: "read",
