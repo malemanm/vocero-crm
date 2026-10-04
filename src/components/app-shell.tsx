@@ -8,11 +8,17 @@ import type { ThemePreference } from "@/lib/theme";
 import type { ResolvedCommit } from "@/lib/version";
 import { AppNav } from "@/components/app-nav";
 import { BrandLogo } from "@/components/brand-mark";
+import {
+  isNavToggleShortcut,
+  readNavCollapsed,
+  writeNavCollapsed,
+} from "@/lib/nav-collapse";
 
 /**
  * Cascarón de la app en dos modos:
  *
- * - Escritorio (lg+): el panel lateral es una columna fija, como siempre.
+ * - Escritorio (lg+): el panel lateral es una columna fija que se puede colapsar
+ *   a una barra de iconos (botón o Cmd/Ctrl + B); la elección se recuerda.
  * - Móvil/tableta: el lateral sale de la izquierda como cajón sobre un velo,
  *   y arriba queda una barra azul marino con el hamburguesa y la marca. El
  *   cajón se cierra solo al navegar (el `pathname` cambia) y con Escape.
@@ -42,6 +48,31 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [navOpen, setNavOpen] = useState(false);
+  // Colapsado (solo escritorio). Arranca expandido para coincidir con el HTML
+  // del servidor; la elección guardada se lee al montar. `ready` evita guardar
+  // ese valor inicial encima de la elección todavía no leída.
+  const [collapsed, setCollapsed] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(readNavCollapsed());
+    setReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (ready) writeNavCollapsed(collapsed);
+  }, [ready, collapsed]);
+
+  // Cmd/Ctrl + B alterna el menú.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isNavToggleShortcut(e)) return;
+      e.preventDefault();
+      setCollapsed((c) => !c);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Navegar = cerrar el cajón. Sin esto, tocar "Pipeline" deja el velo encima
   // de la pantalla recién cargada.
@@ -78,6 +109,8 @@ export function AppShell({
         agenda={agenda}
         open={navOpen}
         onClose={() => setNavOpen(false)}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((c) => !c)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
