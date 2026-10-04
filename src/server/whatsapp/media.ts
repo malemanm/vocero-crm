@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { graphRequest, MetaApiError } from "@/lib/meta/client";
-import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
+import { getWhatsAppConnection } from "@/server/whatsapp/connection";
+import type { YCloudCredentials } from "@/server/ycloud/credentials";
 
 /**
  * 008 — Única frontera de media con la Graph API (constitución II: todo el
@@ -210,6 +211,45 @@ export async function downloadGraphMedia(
 }
 
 /**
+ * 020 — Descarga un adjunto entrante de YCloud desde la URL que trajo el
+ * webhook (guardada en `payload.link`). La API key solo viaja a hosts de
+ * YCloud, jamás a una URL arbitraria.
+ */
+export async function downloadYCloudMedia(
+  creds: YCloudCredentials,
+  asset: { payload: unknown },
+  maxBytes: number = MEDIA_LIMITS.document.maxBytes
+): Promise<{ data: Buffer; mimeType: string | null; fileSize: number }> {
+  const link = (asset.payload as { link?: string } | null)?.link;
+  if (!link) throw new MediaFetchError("YCloud no entregó URL del adjunto");
+  let res: Response;
+  try {
+    const trusted = new URL(link).hostname.endsWith("ycloud.com");
+    res = await fetch(link, {
+      headers: trusted ? { "X-API-Key": creds.apiKey } : {},
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new MediaFetchError("No se pudo descargar el adjunto");
+  }
+  if (!res.ok) {
+    throw new MediaFetchError(
+      `La descarga devolvió ${res.status}`,
+      res.status === 404 || res.status === 410
+    );
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.byteLength > maxBytes) {
+    throw new MediaFetchError("El adjunto excede el límite de tamaño", true);
+  }
+  return {
+    data: buf,
+    mimeType: res.headers.get("content-type"),
+    fileSize: buf.byteLength,
+  };
+}
+
+/**
  * Garantiza que el asset esté en disco (`fetchStatus=available`).
  * Se usa en la descarga in-process post-ingesta Y on-demand desde la ruta de
  * media. Nunca lanza hacia el webhook: el que llama decide qué hacer con el
@@ -230,14 +270,14 @@ export async function ensureAssetAvailable(
   if (asset.fetchStatus === "available") return asset;
   if (!asset.waMediaId) return null; // location/contacts no tienen binario
 
-  const creds = await getCredentialsByOrg(organizationId);
-  if (!creds) return null;
+  const conn = await getWhatsAppConnection(organizationId);
+  if (!conn) return null;
 
   try {
-    const { data, mimeType, fileSize } = await downloadGraphMedia(
-      creds.token,
-      asset.waMediaId
-    );
+    const { data, mimeType, fileSize } =
+      conn.provider === "meta"
+        ? await downloadGraphMedia(conn.creds.token, asset.waMediaId)
+        : await downloadYCloudMedia(conn.creds, asset);
     const storagePath = await saveMediaFile(organizationId, assetId, data);
     const updated = await db
       .update(schema.mediaAsset)

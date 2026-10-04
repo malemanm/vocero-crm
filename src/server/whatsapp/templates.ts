@@ -252,24 +252,46 @@ export async function applyTemplateStatusEvent(
   const creds = await getCredentialsByWabaId(wabaId);
   if (!creds) return;
 
-  const status = mapMetaStatus(value.event);
   const name = value.message_template_name;
   const language = value.message_template_language;
-  if (!status || !name || !language) return;
+  if (!name || !language) return;
+  await applyTemplateStatusForOrg(creds.organizationId, {
+    event: value.event ?? "",
+    name,
+    language,
+    reason: value.reason ?? null,
+  });
+}
+
+/**
+ * 020 — Aplica un cambio de estado de plantilla a una organización ya
+ * resuelta. Lo comparten Meta (por WABA) y YCloud (por WABA firmado).
+ */
+export async function applyTemplateStatusForOrg(
+  organizationId: string,
+  input: {
+    event: string;
+    name: string;
+    language: string;
+    reason: string | null;
+  }
+): Promise<void> {
+  const status = mapMetaStatus(input.event);
+  if (!status) return;
 
   const db = getDb();
   await db
     .update(schema.template)
     .set({
       status,
-      rejectionReason: status === "rejected" ? (value.reason ?? null) : null,
+      rejectionReason: status === "rejected" ? input.reason : null,
       updatedAt: new Date(),
     })
     .where(
       and(
-        eq(schema.template.organizationId, creds.organizationId),
-        eq(schema.template.name, name),
-        eq(schema.template.language, language)
+        eq(schema.template.organizationId, organizationId),
+        eq(schema.template.name, input.name),
+        eq(schema.template.language, input.language)
       )
     );
 }
