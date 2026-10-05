@@ -13,6 +13,7 @@ import { ycloudEnabled } from "@/server/whatsapp/providers-flag";
 import { SendError } from "@/server/whatsapp/send-error";
 import { toYCloudSendBody } from "@/lib/ycloud/send-body";
 import { YCloudApiError, ycloudRequest } from "@/lib/ycloud/client";
+import { graphRequest } from "@/lib/meta/client";
 
 /**
  * 020 — Qué conexión de WhatsApp usa una organización. Meta tiene prioridad;
@@ -96,6 +97,54 @@ export async function sendWhatsAppPayload(
   } catch (err) {
     if (err instanceof SendError) throw err;
     return ycloudSendError(err, conn.creds.organizationId);
+  }
+}
+
+const MARK_READ_TIMEOUT_MS = 3_000;
+
+/**
+ * Marca como leído el mensaje de un cliente (las palomitas azules). Es una
+ * cortesía: NUNCA lanza y no retiene a quien la llama más de unos segundos,
+ * porque quien espera es el turno del agente. Devuelve si el proveedor la
+ * aceptó. Las confirmaciones de lectura son acumulativas: marcar el último
+ * entrante marca también los anteriores.
+ */
+export async function markInboundRead(
+  conn: WhatsAppConnection,
+  wamid: string
+): Promise<boolean> {
+  const work: Promise<unknown> =
+    conn.provider === "ycloud"
+      ? ycloudRequest(
+          `/whatsapp/inboundMessages/${encodeURIComponent(wamid)}/markAsRead`,
+          {
+            method: "POST",
+            apiKey: conn.creds.apiKey,
+            timeoutMs: MARK_READ_TIMEOUT_MS,
+          }
+        )
+      : graphRequest(`${conn.creds.phoneNumberId}/messages`, {
+          method: "POST",
+          token: conn.creds.token,
+          body: {
+            messaging_product: "whatsapp",
+            status: "read",
+            message_id: wamid,
+          },
+        });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), MARK_READ_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([work, timeout]);
+    return true;
+  } catch {
+    // Si `work` pierde la carrera y luego rechaza, que no quede sin atender.
+    work.catch(() => {});
+    return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

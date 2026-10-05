@@ -221,6 +221,18 @@ async function main() {
   sent = (await outbox()).sent.find((s) => s.body.type === "template");
   ok("sale con nombre, idioma y parámetros", sent?.body.template?.name === "recordatorio" && sent.body.template.language?.code === "es_MX" && sent.body.template.components?.[0]?.parameters?.[0]?.text === "Ana", JSON.stringify(sent?.body));
 
+  console.log("\n== Agente: marca leído y contesta por YCloud ==");
+  const lab = (await api("/api/lab/runs")).json;
+  if (!lab?.aiConfigured) {
+    console.log("  (IA no configurada: OPENROUTER_API_TOKEN + ai-mock; se omite)");
+  } else {
+    await api("/api/agent/profile", { method: "PUT", body: JSON.stringify({ enabled: true }) });
+    await simulate({ kind: "inbound", from: "+5215533330000", to: BIZ, name: "Cliente Agente", text: "hola, ¿qué horario tienen?", wamid: "wamid.YC.IN.AGENT" });
+    ok("el agente marca leído el mensaje del cliente", await hasta(async () => (await outbox()).markedRead.includes("wamid.YC.IN.AGENT"), 20000));
+    ok("y contesta al cliente por sendDirectly", await hasta(async () => (await outbox()).sent.some((m) => m.body.to === "+525533330000" && m.body.type === "text"), 20000));
+    await api("/api/agent/profile", { method: "PUT", body: JSON.stringify({ enabled: false }) });
+  }
+
   console.log("\n== Infelices al enviar ==");
   await mock({ sendFail: 503 });
   r = await api(`/api/conversations/${conv.id}/messages`, { method: "POST", body: JSON.stringify({ text: "con YCloud caído" }) });

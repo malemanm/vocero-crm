@@ -19,6 +19,10 @@ import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { getOffers, mapaDeHuecosParaModelo } from "@/server/agenda/offers";
+import {
+  getWhatsAppConnection,
+  markInboundRead,
+} from "@/server/whatsapp/connection";
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -133,6 +137,26 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
     await applyHandoff(conversationId, organizationId, "ventana");
     return;
+  }
+
+  // Cortesía: el cliente ve las palomitas azules al instante y no tras los
+  // segundos que tarde el modelo. Solo conversaciones reales de WhatsApp (el
+  // Laboratorio y los demás canales no tienen nada que marcar) y nunca puede
+  // frenar ni tumbar el turno.
+  if (
+    !conversation.isTest &&
+    conversation.channel === "whatsapp" &&
+    lastInbound.waMessageId
+  ) {
+    try {
+      const conn = await getWhatsAppConnection(organizationId);
+      if (conn) await markInboundRead(conn, lastInbound.waMessageId);
+    } catch (err) {
+      console.warn(
+        "[agente] no se pudo marcar leído:",
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 
   // Patrón de respaldo ANTES del LLM (FR-022). Avisa y traspasa, en el mismo

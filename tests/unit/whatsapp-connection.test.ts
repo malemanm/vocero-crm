@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getCredentialsByOrg = vi.fn();
 const getYCloudCredentialsByOrg = vi.fn();
 const ycloudRequest = vi.fn();
+const graphRequest = vi.fn();
 let flag = false;
 
 vi.mock("@/server/whatsapp/credentials", () => ({
@@ -15,6 +16,10 @@ vi.mock("@/server/ycloud/credentials", () => ({
 }));
 vi.mock("@/server/whatsapp/providers-flag", () => ({
   ycloudEnabled: () => flag,
+}));
+vi.mock("@/lib/meta/client", async (orig) => ({
+  ...(await orig<typeof import("@/lib/meta/client")>()),
+  graphRequest,
 }));
 vi.mock("@/lib/ycloud/client", async (orig) => ({
   ...(await orig<typeof import("@/lib/ycloud/client")>()),
@@ -132,5 +137,45 @@ describe("wabaIdForOrg (CAPI no depende del proveedor)", () => {
     flag = true;
     getYCloudCredentialsByOrg.mockResolvedValue({ ...yc, wabaId: null });
     expect(await wabaIdForOrg("o")).toBeNull();
+  });
+});
+
+describe("markInboundRead (marcar leído el mensaje del cliente)", () => {
+  const ycConn = { provider: "ycloud", creds: yc } as never;
+  const metaConn = { provider: "meta", creds: { phoneNumberId: "PN1", token: "T" } } as never;
+
+  it("YCloud: marca por el wamid, codificado", async () => {
+    ycloudRequest.mockResolvedValue({});
+    const { markInboundRead } = await import("@/server/whatsapp/connection");
+    expect(await markInboundRead(ycConn, "wamid.A/B")).toBe(true);
+    expect(ycloudRequest.mock.calls[0]![0]).toBe("/whatsapp/inboundMessages/wamid.A%2FB/markAsRead");
+    expect(ycloudRequest.mock.calls[0]![1]).toMatchObject({ method: "POST", apiKey: "K" });
+  });
+  it("Meta: status read por Graph, sin indicador de escritura", async () => {
+    graphRequest.mockResolvedValue({});
+    const { markInboundRead } = await import("@/server/whatsapp/connection");
+    expect(await markInboundRead(metaConn, "wamid.X")).toBe(true);
+    expect(graphRequest.mock.calls[0]![0]).toBe("PN1/messages");
+    expect(graphRequest.mock.calls[0]![1].body).toEqual({
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: "wamid.X",
+    });
+  });
+  it("si el proveedor falla, devuelve false y NO lanza", async () => {
+    ycloudRequest.mockRejectedValue(new Error("boom"));
+    const { markInboundRead } = await import("@/server/whatsapp/connection");
+    await expect(markInboundRead(ycConn, "w")).resolves.toBe(false);
+    graphRequest.mockRejectedValue(new Error("boom"));
+    await expect(markInboundRead(metaConn, "w")).resolves.toBe(false);
+  });
+  it("si el proveedor no contesta, no retiene el turno más de unos segundos", async () => {
+    vi.useFakeTimers();
+    ycloudRequest.mockReturnValue(new Promise(() => {}));
+    const { markInboundRead } = await import("@/server/whatsapp/connection");
+    const p = markInboundRead(ycConn, "w");
+    await vi.advanceTimersByTimeAsync(3_500);
+    await expect(p).resolves.toBe(false);
+    vi.useRealTimers();
   });
 });
