@@ -270,6 +270,14 @@ código si no la encuentra ni en el registro ni en tu máquina. Así que:
 Caddy emite el certificado HTTPS solo. Verifica con
 `https://crm.tudominio.com/api/health` → `{"ok":true,"version":"1.4.0",…}`.
 
+### Ruta C — Easypanel (construyendo desde el repositorio)
+
+Misma idea que la Ruta A, sin MCP: una app desde GitHub con el `Dockerfile` más
+un servicio Postgres, en un proyecto por cliente. Paso a paso, variables y
+solución de problemas en [`docs/easypanel.md`](docs/easypanel.md). En un fork con
+cambios propios, construye siempre desde el repositorio y no uses la imagen
+publicada.
+
 ### Actualizar
 
 Antes, lee en [`CHANGELOG.md`](CHANGELOG.md) la sección «Actualizar desde…» de
