@@ -90,7 +90,11 @@ export function AppShell({
   }, [navOpen]);
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background">
+    // `relative`: es el bloque contenedor de todo lo `absolute` que no tenga un
+    // ancestro posicionado más cercano, y su `overflow-hidden` lo recorta. Sin
+    // esto, ese elemento cuelga del DOCUMENTO y, si es alto, le da a la página
+    // una segunda barra de scroll (menú corrido y hueco blanco debajo).
+    <div className="relative flex h-dvh overflow-hidden bg-background">
       {navOpen && (
         <button
           aria-label="Cerrar el menú"
