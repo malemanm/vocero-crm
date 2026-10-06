@@ -115,26 +115,32 @@ export function TimeBars({
             )}
           </div>
 
-          <table className="sr-only">
-            <caption>{title}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Fecha</th>
-                <th scope="col">{unit}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {points.map((p) => (
-                <tr key={p.bucket}>
-                  <td>{etiqueta(p.bucket)}</td>
-                  <td>
-                    {format(p.value)}
-                    {p.detail ? ` · ${p.detail}` : ""}
-                  </td>
+          {/* La tabla va DENTRO del contenedor, no con `sr-only` ella misma: una
+              tabla ignora `height: 1px` y `overflow: hidden`, y siendo absoluta
+              sin ancestro posicionado estiraba la página entera con una segunda
+              barra de scroll (la del documento). El div sí mide 1 px y la recorta. */}
+          <div className="sr-only">
+            <table>
+              <caption>{title}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Fecha</th>
+                  <th scope="col">{unit}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {points.map((p) => (
+                  <tr key={p.bucket}>
+                    <td>{etiqueta(p.bucket)}</td>
+                    <td>
+                      {format(p.value)}
+                      {p.detail ? ` · ${p.detail}` : ""}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </figure>
