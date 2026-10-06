@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { ConversationDto, TemplateDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { apiErrorText } from "@/lib/api-error-text";
 import { formatBytes, formatRemaining } from "./helpers";
 import { TemplateSender } from "./template-sender";
 
@@ -93,8 +94,7 @@ export function Composer({
   async function apiSend(path: string, init: RequestInit): Promise<string | null> {
     const res = await fetch(path, init);
     if (res.ok) return null;
-    const data = (await res.json().catch(() => null)) as { message?: string } | null;
-    return data?.message ?? `Error ${res.status}`;
+    return apiErrorText(res);
   }
 
   async function submit() {
