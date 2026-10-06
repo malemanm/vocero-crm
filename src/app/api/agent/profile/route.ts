@@ -3,6 +3,7 @@ import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAiConfigured } from "@/lib/env";
+import { PROFILE_LIMITS } from "@/lib/agent-profile-form";
 
 export const dynamic = "force-dynamic";
 
@@ -30,11 +31,11 @@ export const GET = withAuth(async (session) => {
 
 const putSchema = z.object({
   enabled: z.boolean().optional(),
-  name: z.string().trim().min(1).max(60).optional(),
-  tone: z.string().max(500).nullable().optional(),
-  instructions: z.string().max(8000).nullable().optional(),
-  escalationRules: z.string().max(4000).nullable().optional(),
-  greeting: z.string().max(1000).nullable().optional(),
+  name: z.string().trim().min(1).max(PROFILE_LIMITS.name).optional(),
+  tone: z.string().max(PROFILE_LIMITS.tone).nullable().optional(),
+  instructions: z.string().max(PROFILE_LIMITS.instructions).nullable().optional(),
+  escalationRules: z.string().max(PROFILE_LIMITS.escalationRules).nullable().optional(),
+  greeting: z.string().max(PROFILE_LIMITS.greeting).nullable().optional(),
 });
 
 export const PUT = withAuth(async (session, req: Request) => {
