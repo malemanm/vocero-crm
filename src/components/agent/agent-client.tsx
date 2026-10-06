@@ -16,6 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  PROFILE_LIMITS,
+  profileOverLimits,
+  saveErrorMessage,
+  type ProfileField,
+} from "@/lib/agent-profile-form";
+import { cn } from "@/lib/utils";
 
 type Profile = {
   enabled: boolean;
@@ -40,6 +47,7 @@ export function AgentClient() {
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // «Quién responde»: se refresca solo, porque la última llamada del cerebro
   // externo y su /health cambian sin que nadie toque esta pantalla.
   const [brain, setBrain] = useState<BrainStatusDto | null>(null);
@@ -84,11 +92,16 @@ export function AgentClient() {
   }
 
   async function saveProfile(patch: Partial<Profile>) {
-    await fetch("/api/agent/profile", {
+    const res = await fetch("/api/agent/profile", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     }).catch(() => null);
+    const error = await saveErrorMessage(res);
+    setSaveError(error);
+    // Si no se guardó NO se recarga: recargar traería el valor viejo del
+    // servidor y borraría lo que el operador acaba de escribir.
+    if (error) return;
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     void refetch();
@@ -111,6 +124,11 @@ export function AgentClient() {
         <h2 className="text-[17px] font-bold tracking-tight">Agente de IA</h2>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-primary">Guardado ✓</span>}
+          {saveError && (
+            <span className="text-xs text-destructive" title={saveError}>
+              No se guardó
+            </span>
+          )}
           <span className="text-sm text-muted-foreground">
             {profile.enabled ? "Encendido" : "Apagado"}
           </span>
@@ -157,22 +175,41 @@ export function AgentClient() {
       )}
 
       <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
-        <ProfileSection profile={profile} onSave={saveProfile} />
+        <ProfileSection profile={profile} onSave={saveProfile} error={saveError} />
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
     </div>
   );
 }
 
+/** `1234 / 8000`, en rojo cuando se pasa: el límite lo impone la API. */
+function Counter({ value, field }: { value: string | null; field: ProfileField }) {
+  const length = (value ?? "").length;
+  const max = PROFILE_LIMITS[field];
+  return (
+    <p
+      className={cn(
+        "text-right text-[11px] tabular-nums",
+        length > max ? "font-semibold text-destructive" : "text-text-3"
+      )}
+    >
+      {length} / {max}
+    </p>
+  );
+}
+
 function ProfileSection({
   profile,
   onSave,
+  error,
 }: {
   profile: Profile;
   onSave: (patch: Partial<Profile>) => Promise<void>;
+  error: string | null;
 }) {
   const [form, setForm] = useState(profile);
   useEffect(() => setForm(profile), [profile]);
+  const over = profileOverLimits(form);
 
   return (
     <Card>
@@ -190,6 +227,7 @@ function ProfileSection({
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
+          <Counter value={form.name} field="name" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-tone">Tono</Label>
@@ -199,6 +237,7 @@ function ProfileSection({
             value={form.tone ?? ""}
             onChange={(e) => setForm({ ...form, tone: e.target.value })}
           />
+          <Counter value={form.tone} field="tone" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-instructions">Instrucciones</Label>
@@ -209,6 +248,7 @@ function ProfileSection({
             value={form.instructions ?? ""}
             onChange={(e) => setForm({ ...form, instructions: e.target.value })}
           />
+          <Counter value={form.instructions} field="instructions" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-escalation">Reglas de escalado</Label>
@@ -219,6 +259,7 @@ function ProfileSection({
             value={form.escalationRules ?? ""}
             onChange={(e) => setForm({ ...form, escalationRules: e.target.value })}
           />
+          <Counter value={form.escalationRules} field="escalationRules" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-greeting">Saludo</Label>
@@ -228,8 +269,25 @@ function ProfileSection({
             value={form.greeting ?? ""}
             onChange={(e) => setForm({ ...form, greeting: e.target.value })}
           />
+          <Counter value={form.greeting} field="greeting" />
         </div>
-        <Button onClick={() => void onSave(form)}>Guardar comportamiento</Button>
+        {over.length > 0 && (
+          <p className="text-sm text-destructive" role="alert">
+            Acorta para poder guardar:{" "}
+            {over
+              .map((o) => `${o.label} (${o.length} de ${o.max}, sobran ${o.length - o.max})`)
+              .join("; ")}
+            .
+          </p>
+        )}
+        {error && over.length === 0 && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+        <Button disabled={over.length > 0} onClick={() => void onSave(form)}>
+          Guardar comportamiento
+        </Button>
       </CardContent>
     </Card>
   );
