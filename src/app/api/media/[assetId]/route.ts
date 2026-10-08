@@ -6,6 +6,7 @@ import {
   ensureAssetAvailable,
   readMediaFile,
 } from "@/server/whatsapp/media";
+import { mediaResponseHeaders } from "@/server/whatsapp/media-headers";
 
 export const dynamic = "force-dynamic";
 
@@ -57,18 +58,9 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
 
   try {
     const data = await readMediaFile(session.organizationId, assetId);
+    // #78: nosniff + CSP sandbox siempre; inline solo para lo previsualizable.
     return new Response(new Uint8Array(data), {
-      headers: {
-        "content-type": asset.mimeType ?? "application/octet-stream",
-        "content-length": String(data.byteLength),
-        // El contenido de un asset es inmutable; privado por sesión.
-        "cache-control": "private, max-age=86400",
-        ...(asset.fileName
-          ? {
-              "content-disposition": `inline; filename="${asset.fileName.replace(/[^\w. -]/g, "_")}"`,
-            }
-          : {}),
-      },
+      headers: mediaResponseHeaders(asset, data.byteLength),
     });
   } catch {
     return apiError(410, "gone", "El archivo del adjunto no está en el volumen");
