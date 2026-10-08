@@ -1226,6 +1226,7 @@ async function main() {
     JSON.stringify(echoImg?.media)
   );
 
+  await respuestasDeBotonChecks();
   await agendaChecks();
   await atribucionChecks();
   await anuncioDeOrigenChecks();
@@ -1233,6 +1234,142 @@ async function main() {
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);
+}
+
+/* ============================================================
+ * #78 — Respuestas de botón. Cuando el cliente toca un botón de respuesta
+ * rápida de una plantilla, Meta manda `type: "button"`; cuando toca un botón
+ * o una fila de lista de un mensaje interactivo, `type: "interactive"`. La
+ * ingesta los descartaba: ni bandeja, ni ventana de 24 h, ni agente. Ahora
+ * entran como texto con el rótulo del botón, igual que si lo hubiera
+ * tecleado. Los payloads del mock tienen la forma documentada por Meta.
+ * ========================================================================== */
+async function respuestasDeBotonChecks() {
+  console.log("\n== #78: una respuesta de botón entra como texto del cliente ==");
+  // Contacto nuevo por corrida: la sección cuenta entrantes y espera la
+  // respuesta del agente a ESTE botón, no a los de una corrida anterior.
+  const CORRIDA = Date.now().toString().slice(-6);
+  const LEAD_B = `5215550${CORRIDA}`;
+  const TEL_B = `525550${CORRIDA}`;
+
+  const perfilAntes = (await api("/api/agent/profile")).json?.profile?.enabled;
+  await api("/api/agent/profile", {
+    method: "PUT",
+    body: JSON.stringify({ enabled: true }),
+  });
+
+  const entrante = (extra, n) =>
+    api("/api/dev/wa-mock/inbound", {
+      method: "POST",
+      body: JSON.stringify({
+        phoneNumberId: PN,
+        from: LEAD_B,
+        name: "Lead botones",
+        waMessageId: `wamid.e2e.78.${CORRIDA}.${n}`,
+        ...extra,
+      }),
+    });
+  const conversacion = async () =>
+    ((await api("/api/conversations")).json?.conversations ?? []).find(
+      (c) => c.contact.phone === TEL_B
+    ) ?? null;
+  const mensajesDe = async (convId) =>
+    (await api(`/api/conversations/${convId}/messages`)).json?.messages ?? [];
+  const entrantes = async (convId) =>
+    (await mensajesDe(convId)).filter((m) => m.direction === "in");
+
+  // 1) Botón de respuesta rápida de una plantilla.
+  const envio = await entrante(
+    { type: "button", button: { text: "Sí, me interesa", payload: "SI_INTERESA" } },
+    1
+  );
+  ok("el webhook acepta un `type: \"button\"`", envio.res.ok, JSON.stringify(envio.json));
+  let conv = null;
+  await hasta(async () => {
+    conv = await conversacion();
+    return !!conv;
+  });
+  ok("el botón de plantilla crea la conversación en la bandeja", !!conv);
+  if (conv) {
+    const boton = (await entrantes(conv.id)).find((m) => m.text === "Sí, me interesa");
+    ok(
+      "y queda como texto con el rótulo del botón (type=text, no button)",
+      boton?.type === "text",
+      JSON.stringify((await mensajesDe(conv.id)).map((m) => [m.direction, m.type, m.text]))
+    );
+    ok(
+      "abre la ventana de 24 h",
+      conv.windowOpen === true && !!conv.lastInboundAt,
+      JSON.stringify({ windowOpen: conv.windowOpen, lastInboundAt: conv.lastInboundAt })
+    );
+    const contesto = await hasta(
+      async () =>
+        (await mensajesDe(conv.id)).some(
+          (m) =>
+            m.direction === "out" &&
+            m.aiGenerated === true &&
+            (m.text ?? "").includes("Sí, me interesa")
+        ),
+      20000
+    );
+    ok(
+      "y dispara al agente como cualquier texto (contestó por el ai-mock)",
+      contesto,
+      JSON.stringify((await mensajesDe(conv.id)).map((m) => [m.direction, m.text]))
+    );
+
+    // 2) Botón de un mensaje interactivo.
+    await entrante(
+      {
+        type: "interactive",
+        interactive: {
+          type: "button_reply",
+          button_reply: { id: "cancel-button", title: "Cancelar" },
+        },
+      },
+      2
+    );
+    const hayCancelar = await hasta(async () =>
+      (await entrantes(conv.id)).some((m) => m.type === "text" && m.text === "Cancelar")
+    );
+    ok("un button_reply interactivo entra como texto con su título", hayCancelar);
+
+    // 3) Fila de una lista.
+    await entrante(
+      {
+        type: "interactive",
+        interactive: {
+          type: "list_reply",
+          list_reply: {
+            id: "priority_express",
+            title: "Envío exprés",
+            description: "Llega mañana",
+          },
+        },
+      },
+      3
+    );
+    const hayLista = await hasta(async () =>
+      (await entrantes(conv.id)).some((m) => m.type === "text" && m.text === "Envío exprés")
+    );
+    ok("un list_reply entra como texto con el título de la fila (no la descripción)", hayLista);
+
+    // Camino infeliz: respuesta sin rótulo ni id → se descarta con aviso y
+    // el webhook sigue vivo; el hilo no gana un mensaje vacío.
+    const roto = await entrante(
+      { type: "interactive", interactive: { type: "button_reply", button_reply: {} } },
+      4
+    );
+    ok("una respuesta de botón sin rótulo no tumba el webhook", roto.res.ok);
+    await sleep(800);
+    const n = (await entrantes(conv.id)).length;
+    ok("y no deja un mensaje vacío en el hilo", n === 3, `entrantes=${n}`);
+  }
+
+  await api("/api/agent/profile", {
+    method: "PUT",
+    body: JSON.stringify({ enabled: perfilAntes === true }),
+  });
 }
 
 /* ============================================================
