@@ -10,7 +10,7 @@ describe("normalizeText", () => {
 
 describe("digitsOnly", () => {
   it("deja solo dígitos", () => {
-    expect(digitsOnly("+52 462 134 9768")).toBe("524621349768");
+    expect(digitsOnly("+52 555 000 1234")).toBe("525550001234");
     expect(digitsOnly("(477) 605-3008")).toBe("4776053008");
   });
 });
@@ -21,7 +21,7 @@ describe("matchesQuery (bug reportado en producción)", () => {
   // en sus propios mensajes).
   const kevin = {
     text: ["Kevin Belier Sesión 🐏"],
-    phone: "524621349768",
+    phone: "525550001234",
   };
 
   it("consulta vacía → no filtra", () => {
@@ -41,10 +41,10 @@ describe("matchesQuery (bug reportado en producción)", () => {
   });
 
   it("teléfono tal como se ve en pantalla, con formato", () => {
-    expect(matchesQuery("+52 462 134 9768", kevin)).toBe(true);
-    expect(matchesQuery("462 134", kevin)).toBe(true);
-    expect(matchesQuery("462-134-9768", kevin)).toBe(true);
-    expect(matchesQuery("4621349768", kevin)).toBe(true);
+    expect(matchesQuery("+52 555 000 1234", kevin)).toBe(true);
+    expect(matchesQuery("555 000", kevin)).toBe(true);
+    expect(matchesQuery("555-000-1234", kevin)).toBe(true);
+    expect(matchesQuery("5550001234", kevin)).toBe(true);
   });
 
   it("no empareja con quien no es", () => {
@@ -64,7 +64,7 @@ describe("matchesQuery (bug reportado en producción)", () => {
   });
 
   it("contacto BSUID sin teléfono no revienta", () => {
-    expect(matchesQuery("462134", { text: ["Anónimo"], phone: null })).toBe(false);
+    expect(matchesQuery("555000", { text: ["Anónimo"], phone: null })).toBe(false);
     expect(matchesQuery("anon", { text: ["Anónimo"], phone: null })).toBe(true);
   });
 

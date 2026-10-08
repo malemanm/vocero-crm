@@ -39,7 +39,7 @@ function base(resultados: unknown[][]) {
 
 const sqlDe = (w: SQL) => new PgDialect().sqlToQuery(w);
 
-const CONTACTO = { id: "ct_tel", waIdentity: "524621349768", waUserId: "MX.bsu.1" };
+const CONTACTO = { id: "ct_tel", waIdentity: "525550001234", waUserId: "MX.bsu.1" };
 
 describe("parseIdentity (la identidad del cerebro, leída como la ingesta)", () => {
   it("bsuid:<id> es un BSUID sin teléfono", () => {
@@ -52,9 +52,9 @@ describe("parseIdentity (la identidad del cerebro, leída como la ingesta)", () 
   });
 
   it("un teléfono se normaliza igual que el `from` del webhook (521 → 52)", () => {
-    expect(parseIdentity("5214621349768")).toMatchObject({
-      identity: "524621349768",
-      phone: "524621349768",
+    expect(parseIdentity("5215550001234")).toMatchObject({
+      identity: "525550001234",
+      phone: "525550001234",
       waUserId: null,
     });
   });
@@ -71,7 +71,7 @@ describe("findContactByIdentity", () => {
 
   it("la llave exacta gana y no hay segunda consulta", async () => {
     const wheres = base([[CONTACTO]]);
-    await expect(findContactByIdentity("org_1", "524621349768")).resolves.toBe(CONTACTO);
+    await expect(findContactByIdentity("org_1", "525550001234")).resolves.toBe(CONTACTO);
     expect(wheres).toHaveLength(1);
   });
 

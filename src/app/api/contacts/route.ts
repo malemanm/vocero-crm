@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * Búsqueda tolerante en SQL, espejo de `matchesQuery` del cliente:
  * - nombre sin acentos ni mayúsculas (`translate`, sin depender de la
  *   extensión `unaccent`, que exigiría privilegios en la BD);
- * - teléfono por DÍGITOS, para poder teclearlo como se ve ("+52 462 134…").
+ * - teléfono por DÍGITOS, para poder teclearlo como se ve ("+52 555 000…").
  */
 const UNACCENT_FROM = "áàäâãéèëêíìïîóòöôõúùüûñçÁÀÄÂÃÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÑÇ";
 const UNACCENT_TO = "aaaaaeeeeiiiiooooouuuuncAAAAAEEEEIIIIOOOOOUUUUNC";
