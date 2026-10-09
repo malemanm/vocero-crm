@@ -38,6 +38,12 @@ const baseActions = [
 const agendaActions = [
   z.object({
     action: z.literal("offer_slots"),
+    /**
+     * El día que pidió el cliente (YYYY-MM-DD, en la zona del negocio). Sin él,
+     * se reparte desde hoy. El motor lo valida: una fecha inventada o fuera de
+     * rango se dice, no se ofrece a ciegas.
+     */
+    date: z.string().nullish(),
     reply: z.string().optional(),
   }),
   z.object({

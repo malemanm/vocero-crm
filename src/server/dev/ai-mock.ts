@@ -70,10 +70,19 @@ export function aiMockCompletion(messages: InMessage[]): string {
   const agendaEnseñada = messages.some(
     (m) => m.role === "system" && m.content.includes('"action":"offer_slots"')
   );
-  const quiereCita = /cita|agendar|agenda|horario|reserv/.test(text);
+  const quiereCita = /cita|agendar|agenda|horario|reserv|demo|videollamada|reuni/.test(text);
   if (agendaEnseñada && quiereCita && huecos.length === 0) {
+    // Como un modelo de verdad: convierte «el lunes» / «mañana» en una fecha con
+    // el «Hoy es …» que el prompt le enseñó. Sin ese dato no inventa nada.
+    const hoy = messages
+      .map((m) => (m.role === "system" ? m.content.match(/Hoy es \S+ (\d{4}-\d{2}-\d{2})/) : null))
+      .find(Boolean)?.[1];
+    const date = hoy ? fechaPedida(text, hoy) : null;
     return JSON.stringify({
       action: "offer_slots",
+      ...(date ? { date } : {}),
+      // Frase deliberadamente INCOMPATIBLE con cualquier día: si el sistema no
+      // escribiera la suya, el self-test lo vería (viernes ≠ lunes).
       reply: "Claro, tengo estos horarios:",
     });
   }
@@ -110,4 +119,19 @@ export function aiMockCompletion(messages: InMessage[]): string {
     action: "reply",
     text: `Respuesta de prueba sobre: ${eco}`,
   });
+}
+
+const DIAS = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
+
+/** La fecha (YYYY-MM-DD) que pide el texto, o null. «el viernes» dicho en viernes es el próximo. */
+function fechaPedida(textoMinusculas: string, hoy: string): string | null {
+  const t = textoMinusculas.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const base = new Date(`${hoy}T12:00:00Z`);
+  const mas = (dias: number) =>
+    new Date(base.getTime() + dias * 86_400_000).toISOString().slice(0, 10);
+  if (/pasado manana/.test(t)) return mas(2);
+  if (/\bmanana\b/.test(t)) return mas(1);
+  const idx = DIAS.findIndex((d) => new RegExp(`\\b${d}\\b`).test(t));
+  if (idx === -1) return null;
+  return mas(((idx - base.getUTCDay() + 6) % 7) + 1);
 }
