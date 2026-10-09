@@ -28,6 +28,17 @@ describe("prompt del agente con agenda", () => {
   it("le prohíbe mencionar días u horas en la frase de offer_slots: los pone el sistema", () => {
     expect(prompt(true, ctx)).toMatch(/NO menciones (ning[uú]n )?d[ií]a/i);
   });
+  it("no arrastra un día viejo ni ofrece horarios cuando solo se nombra un tema", () => {
+    const p = prompt(true, ctx);
+    expect(p).toMatch(/SU ÚLTIMO mensaje/);
+    expect(p).toMatch(/no ofrezcas horarios todav[ií]a/);
+    expect(p).toMatch(/para hoy/i);
+  });
+  it("none solo cuando no hay nada que contestar (con o sin agenda)", () => {
+    for (const a of [true, false]) {
+      expect(prompt(a, a ? ctx : undefined)).toMatch(/NUNCA uses none/);
+    }
+  });
   it("sin agenda no hay nada de esto: ni un token", () => {
     const p = prompt(false);
     expect(p).not.toMatch(/offer_slots|Hoy es|demo/i);
