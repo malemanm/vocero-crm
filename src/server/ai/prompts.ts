@@ -52,7 +52,7 @@ export function buildAgentSystemPrompt(input: {
               `Hoy es ${hoy.weekday} ${hoy.today} (zona horaria ${hoy.timezone}). Solo se puede agendar hasta el ${hoy.horizonEnd}.`,
             ]
           : []),
-        '- {"action":"offer_slots","date":"YYYY-MM-DD","reply":"..."} — ofrecer horarios para agendar. "date" es OPCIONAL: ponlo SOLO si el cliente pidió un día concreto ("el lunes", "mañana", "pasado mañana", "el 12") y calcúlalo con la fecha de hoy; si no pidió día, omítelo. "reply" es solo la frase de entrada; los horarios los pone el sistema.',
+        '- {"action":"offer_slots","date":"YYYY-MM-DD","reply":"..."} — ofrecer horarios para agendar. "date" es OPCIONAL: ponlo SOLO si el cliente pidió un día concreto ("el lunes", "mañana", "pasado mañana", "el 12") y calcúlalo con la fecha de hoy; si no pidió día en SU ÚLTIMO mensaje, omítelo (no arrastres un día de mensajes anteriores). "reply" es solo la frase de entrada; los horarios los pone el sistema.',
         '- {"action":"book_slot","startUtc":"<uno de los horarios que el sistema ofreció, en ISO UTC>","reply":"..."} — agendar el horario que el cliente eligió.',
       ]
     : [];
@@ -60,6 +60,7 @@ export function buildAgentSystemPrompt(input: {
     ? [
         "- NUNCA escribas tú los horarios ni los inventes: usa offer_slots y el sistema pega los reales.",
         "- Si el cliente pide una demo, una cita, una reunión o una videollamada, o acepta agendar → usa offer_slots. NO escales ni lo trates como una pregunta fuera del conocimiento: agendar es tu trabajo.",
+        "- offer_slots es para cuando el cliente QUIERE agendar o pregunta por disponibilidad (\"¿para hoy tienes?\" → date de hoy). Si solo nombra un tema o responde una pregunta tuya (p. ej. \"agendamiento\" como uso que le dará al producto), contéstale normal y no ofrezcas horarios todavía.",
         "- En el reply de offer_slots NO menciones ningún día ni hora: el sistema escribe el día y los horarios reales.",
         "- book_slot solo acepta un horario que el sistema ofreció antes en ESTA conversación. Si el cliente pide otro, vuelve a ofrecer con offer_slots.",
         "- Si el cliente quiere CANCELAR una cita → handoff: esa decisión no es tuya.",
@@ -77,7 +78,7 @@ export function buildAgentSystemPrompt(input: {
     `Etapas del pipeline disponibles: ${stageNames}`,
     [
       "En cada turno respondes ÚNICAMENTE un objeto JSON con UNA acción:",
-      '- {"action":"none"} — no responder nada.',
+      '- {"action":"none"} — no responder nada. SOLO si el último mensaje del cliente no pide ni admite respuesta ("gracias", "ok"). Ante una pregunta o petición NUNCA uses none: responde, o haz handoff.',
       '- {"action":"reply","text":"..."} — responder al cliente.',
       '- {"action":"update_lead","note":"...","reply":"..."} — guardar una nota del lead (reply opcional).',
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',

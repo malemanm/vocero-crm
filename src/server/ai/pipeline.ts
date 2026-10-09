@@ -279,6 +279,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   switch (action.action) {
     case "none":
+      console.warn(`[agente] el modelo eligió «none»: no respondió en ${conversationId}`);
       return;
     case "reply":
       await deliverReply(conversation, action.text);
