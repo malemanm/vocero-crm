@@ -17,7 +17,11 @@ import {
 import { HANDOFF_BACKUP_ACK, matchesHandoffIntent } from "@/server/ai/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { agendaEnabled } from "@/server/agenda/flag";
-import { bookSlot, offerSlots } from "@/server/agenda/agent";
+import {
+  agendaContextoParaPrompt,
+  bookSlot,
+  offerSlots,
+} from "@/server/agenda/agent";
 import { getOffers, mapaDeHuecosParaModelo } from "@/server/agenda/offers";
 
 /**
@@ -183,7 +187,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: buildAgentSystemPrompt({ profile, kb, stages, agenda }),
+      content: buildAgentSystemPrompt({
+        profile,
+        kb,
+        stages,
+        agenda,
+        // Hoy y la zona del negocio: sin esto «el lunes» no tiene a qué fecha ir.
+        agendaContext: agenda
+          ? await agendaContextoParaPrompt(organizationId).catch(() => undefined)
+          : undefined,
+      }),
     },
     ...history
       .filter((m) => m.text)
@@ -224,6 +237,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
                 organizationId,
                 conversationId,
                 intro: action.reply,
+                date: action.date,
               })
             : await bookSlot({
                 organizationId,

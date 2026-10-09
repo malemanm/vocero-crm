@@ -31,18 +31,36 @@ export function buildAgentSystemPrompt(input: {
    * token en hablar de horarios: la agenda no existe aquí.
    */
   agenda?: boolean;
+  /**
+   * Qué día es hoy, en la zona del negocio. Sin esto el modelo no puede convertir
+   * «el lunes» o «mañana» en la fecha que `offer_slots` necesita.
+   */
+  agendaContext?: {
+    today: string;
+    weekday: string;
+    timezone: string;
+    horizonEnd: string;
+  };
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
+  const hoy = input.agendaContext;
   const agendaLines = input.agenda
     ? [
-        '- {"action":"offer_slots","reply":"..."} — ofrecer horarios para agendar (reply es solo la frase de entrada; los horarios los pone el sistema).',
+        ...(hoy
+          ? [
+              `Hoy es ${hoy.weekday} ${hoy.today} (zona horaria ${hoy.timezone}). Solo se puede agendar hasta el ${hoy.horizonEnd}.`,
+            ]
+          : []),
+        '- {"action":"offer_slots","date":"YYYY-MM-DD","reply":"..."} — ofrecer horarios para agendar. "date" es OPCIONAL: ponlo SOLO si el cliente pidió un día concreto ("el lunes", "mañana", "pasado mañana", "el 12") y calcúlalo con la fecha de hoy; si no pidió día, omítelo. "reply" es solo la frase de entrada; los horarios los pone el sistema.',
         '- {"action":"book_slot","startUtc":"<uno de los horarios que el sistema ofreció, en ISO UTC>","reply":"..."} — agendar el horario que el cliente eligió.',
       ]
     : [];
   const agendaRules = input.agenda
     ? [
         "- NUNCA escribas tú los horarios ni los inventes: usa offer_slots y el sistema pega los reales.",
+        "- Si el cliente pide una demo, una cita, una reunión o una videollamada, o acepta agendar → usa offer_slots. NO escales ni lo trates como una pregunta fuera del conocimiento: agendar es tu trabajo.",
+        "- En el reply de offer_slots NO menciones ningún día ni hora: el sistema escribe el día y los horarios reales.",
         "- book_slot solo acepta un horario que el sistema ofreció antes en ESTA conversación. Si el cliente pide otro, vuelve a ofrecer con offer_slots.",
         "- Si el cliente quiere CANCELAR una cita → handoff: esa decisión no es tuya.",
       ]

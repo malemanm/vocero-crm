@@ -1932,6 +1932,61 @@ async function agendaChecks() {
     });
   }
 
+  console.log("\n== 015: el cliente pide un día concreto (frase y lista no se contradicen) ==");
+  {
+    /**
+     * `offer_slots` no llevaba fecha: el agente ofrecía SIEMPRE los primeros
+     * huecos desde hoy, y la frase del modelo («…para el lunes 12:») quedaba
+     * encima de una lista de HOY viernes. El ai-mock contesta con una frase que
+     * NO nombra ningún día y con `date`, como un modelo real que leyó el «Hoy
+     * es …» del prompt; el texto que llega al cliente lo escribe el sistema.
+     */
+    await api("/api/agent/profile", { method: "PUT", body: JSON.stringify({ enabled: true }) });
+    const CORRIDA_D = Date.now().toString().slice(-6);
+    const LEAD_D = `5214628${CORRIDA_D}`;
+    await api("/api/dev/wa-mock/inbound", {
+      method: "POST",
+      body: JSON.stringify({
+        phoneNumberId: PN,
+        from: LEAD_D,
+        name: "Lead agenda D",
+        text: "quiero una demo el lunes",
+        waMessageId: `wamid.e2e.015.d.${CORRIDA_D}.1`,
+      }),
+    });
+    const convD = async () =>
+      ((await api("/api/conversations")).json?.conversations ?? []).find(
+        (c) => c.contact.phone === `524628${CORRIDA_D}`
+      );
+    await hasta(async () => Boolean(await convD()));
+    const cD = await convD();
+    ok("el agente atendió al lead que pide una demo", Boolean(cD));
+    if (cD) {
+      const ultimo = async () => {
+        const msgs = (await api(`/api/conversations/${cD.id}/messages`)).json?.messages ?? [];
+        return msgs.filter((m) => m.direction === "out").at(-1)?.text ?? "";
+      };
+      await hasta(async () => (await ultimo()).length > 0);
+      const texto = await ultimo();
+      ok(
+        "la frase del sistema nombra el LUNES que pidió el cliente",
+        /horarios disponibles para el lunes \d{1,2} de [a-záéíóú]+:/i.test(texto),
+        texto.slice(0, 120)
+      );
+      ok(
+        "y la lista no trae horarios de otro día (ni «hoy», ni «mañana»)",
+        !/hoy|mañana|martes|miércoles|jueves|viernes|sábado|domingo/i.test(texto),
+        texto.slice(0, 160)
+      );
+      ok(
+        "con horarios reales (varias horas del lunes)",
+        (texto.match(/• \d{2}:\d{2}/g) ?? []).length >= 2,
+        texto.slice(0, 160)
+      );
+    }
+    await api("/api/agent/profile", { method: "PUT", body: JSON.stringify({ enabled: false }) });
+  }
+
   console.log("\n== 015: el operador y el enlace pendiente (US4) ==");
   const bookingId = creada.json?.bookingId;
   const cancelada1 = await api(`/api/bookings/${bookingId}`, {

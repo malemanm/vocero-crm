@@ -7,6 +7,19 @@ imagen `ghcr.io/kevinrivm/vocero-crm:X.Y.Z`.
 
 ## Sin publicar
 
+### El agente y la agenda: el día que pide el cliente
+
+- **Antes**, `offer_slots` no llevaba fecha: el agente ofrecía siempre los
+  primeros huecos desde hoy, pidiera el cliente el día que pidiera, y la frase
+  que escribía el modelo («…para el lunes 12:») quedaba sobre una lista de otro
+  día. **Ahora** `offer_slots` lleva `date` (YYYY-MM-DD en la zona del negocio),
+  el prompt le dice al modelo qué día es hoy, y cuando hay fecha la frase de
+  entrada la escribe el sistema con el día real. Un día cerrado, lleno, pasado o
+  fuera del horizonte se dice con claridad y se ofrece lo más próximo.
+- Con la agenda encendida, pedir una **demo, cita, reunión o videollamada**
+  se agenda: ya no se escala ni cuenta como «fuera del conocimiento».
+- No hay variables nuevas ni migración.
+
 ### WhatsApp por YCloud (opcional)
 
 Nueva forma de conectar el número de WhatsApp: con la API key de YCloud, sin app
