@@ -11,11 +11,11 @@ function msg(partial: Partial<WebhookMessage>): WebhookMessage {
 
 describe("normalizeMx (simétrica ingest/envío)", () => {
   it("troncal MX 521 + 10 dígitos → 52 + 10 dígitos", () => {
-    expect(normalizeMx("5214621349768")).toBe("524621349768");
+    expect(normalizeMx("5215550001234")).toBe("525550001234");
   });
 
   it("52 + 10 dígitos queda igual", () => {
-    expect(normalizeMx("524621349768")).toBe("524621349768");
+    expect(normalizeMx("525550001234")).toBe("525550001234");
   });
 
   it("otros países quedan intactos", () => {
@@ -27,29 +27,29 @@ describe("normalizeMx (simétrica ingest/envío)", () => {
 
 describe("resolveIdentity: teléfono presente", () => {
   const contacts: WebhookValue["contacts"] = [
-    { wa_id: "5214621349768", profile: { name: "Kevin" } },
+    { wa_id: "5215550001234", profile: { name: "Kevin" } },
   ];
 
   it("usa el teléfono NORMALIZADO como identidad", () => {
-    const r = resolveIdentity(msg({ from: "5214621349768" }), contacts);
+    const r = resolveIdentity(msg({ from: "5215550001234" }), contacts);
     expect(r).not.toBeNull();
-    expect(r!.identity).toBe("524621349768");
-    expect(r!.phone).toBe("524621349768");
+    expect(r!.identity).toBe("525550001234");
+    expect(r!.phone).toBe("525550001234");
     expect(r!.profileName).toBe("Kevin");
   });
 
   it("521 y 52 resuelven a la MISMA identidad (dedup del bug MX)", () => {
-    const a = resolveIdentity(msg({ from: "5214621349768" }), contacts);
-    const b = resolveIdentity(msg({ from: "524621349768" }), []);
+    const a = resolveIdentity(msg({ from: "5215550001234" }), contacts);
+    const b = resolveIdentity(msg({ from: "525550001234" }), []);
     expect(a!.identity).toBe(b!.identity);
   });
 
   it("captura el BSUID si además viene user_id", () => {
-    const r = resolveIdentity(msg({ from: "5214621349768" }), [
-      { wa_id: "5214621349768", user_id: "bsu_777", profile: { name: "Kevin" } },
+    const r = resolveIdentity(msg({ from: "5215550001234" }), [
+      { wa_id: "5215550001234", user_id: "bsu_777", profile: { name: "Kevin" } },
     ]);
     expect(r!.waUserId).toBe("bsu_777");
-    expect(r!.identity).toBe("524621349768"); // el teléfono manda si existe
+    expect(r!.identity).toBe("525550001234"); // el teléfono manda si existe
   });
 });
 

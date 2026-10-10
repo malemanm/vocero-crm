@@ -3,8 +3,8 @@
  *
  * Dos reglas nacidas de uso real:
  * 1. Sin acentos ni mayúsculas — "jose" encuentra a "José".
- * 2. El teléfono se compara por DÍGITOS: la UI lo pinta "+52 462 134 9768" y
- *    la BD lo guarda "524621349768", así que teclear el número tal como se ve
+ * 2. El teléfono se compara por DÍGITOS: la UI lo pinta "+52 555 000 1234" y
+ *    la BD lo guarda "525550001234", así que teclear el número tal como se ve
  *    (o pegarlo con espacios/guiones/paréntesis) no encontraba nada.
  */
 

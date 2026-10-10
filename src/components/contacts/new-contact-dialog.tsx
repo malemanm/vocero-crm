@@ -131,7 +131,7 @@ export function NewContactDialog({
               id="nc-phone"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="52 462 134 9768"
+              placeholder="52 555 000 1234"
             />
             <p className="text-[11px] text-text-3">
               Escríbelo con espacios si quieres, pero{" "}

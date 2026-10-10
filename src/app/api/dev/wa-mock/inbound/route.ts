@@ -32,6 +32,11 @@ const schema = z
     adSourceId: z.string().optional(),
     // 018 — o el `referral` entero, con la forma de Meta (image_url incluida)
     referral: z.record(z.unknown()).optional(),
+    // #78 — respuestas de botón, con la forma de Meta (type "button" e "interactive")
+    button: z
+      .object({ text: z.string(), payload: z.string().optional() })
+      .optional(),
+    interactive: z.record(z.unknown()).optional(),
   })
   .refine((v) => v.from || v.fromUserId, {
     message: "Se requiere from o fromUserId",

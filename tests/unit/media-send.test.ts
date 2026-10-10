@@ -34,6 +34,17 @@ describe("validateOutgoing (límites de la Cloud API)", () => {
     );
   });
 
+  it("HTML y SVG no se envían ni como documento (#78), con un mensaje que explica", () => {
+    for (const mime of ["text/html", "image/svg+xml", "application/xhtml+xml"]) {
+      expect(() => validateOutgoing(mime, 1024), mime).toThrowError(
+        expect.objectContaining({
+          code: "unsupported_type",
+          message: expect.stringContaining("HTML y SVG"),
+        })
+      );
+    }
+  });
+
   it("pdf de 10 MB → document; de 101 MB → too_large", () => {
     expect(validateOutgoing("application/pdf", 10 * MB)).toBe("document");
     expect(() => validateOutgoing("application/pdf", 101 * MB)).toThrowError(

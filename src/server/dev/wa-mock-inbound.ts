@@ -36,15 +36,36 @@ type MockMediaInput = {
   location?: Record<string, unknown>;
 };
 
+/**
+ * #78 — Respuestas de botón con la forma de Meta. `button` es la respuesta a
+ * un botón de plantilla; `interactive` se pasa entero (como el `referral`)
+ * para poder probar `button_reply`, `list_reply` y las formas rotas.
+ */
+type MockButtonInput = {
+  button?: { text: string; payload?: string };
+  interactive?: Record<string, unknown>;
+};
+
 const MOCK_BINARY_TYPES = new Set(["image", "video", "audio", "document", "sticker"]);
 
 function applyMockContent(
   message: Record<string, unknown>,
   type: string,
-  input: { text?: string } & MockMediaInput
+  input: { text?: string } & MockMediaInput & MockButtonInput
 ): void {
   if (type === "text") {
     message.text = { body: input.text ?? "hola" };
+  } else if (type === "button") {
+    // Como lo manda Meta: `context` apunta a la plantilla que traía el botón.
+    const text = input.button?.text ?? input.text ?? "Sí";
+    message.context = { from: "5215500000000", id: `wamid.mock.tpl.${nextN()}` };
+    message.button = { payload: input.button?.payload ?? text, text };
+  } else if (type === "interactive") {
+    message.context = { from: "5215500000000", id: `wamid.mock.int.${nextN()}` };
+    message.interactive = input.interactive ?? {
+      type: "button_reply",
+      button_reply: { id: "btn_mock", title: input.text ?? "Sí" },
+    };
   } else if (type === "location") {
     message.location = input.location ?? {
       latitude: 21.019,
@@ -91,7 +112,8 @@ export function buildInboundPayload(input: {
   waMessageId?: string;
   timestamp?: number;
 } & MockMediaInput &
-  MockReferralInput) {
+  MockReferralInput &
+  MockButtonInput) {
   const type = input.type ?? "text";
   const message: Record<string, unknown> = {
     id: input.waMessageId ?? `wamid.mock.in.${nextN()}`,
