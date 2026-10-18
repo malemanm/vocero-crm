@@ -119,6 +119,31 @@ export async function upsertFicha(input: {
   return { ficha: merged };
 }
 
+/**
+ * 026 — Vacía la ficha entera. Solo para cuando se elimina la conversación de
+ * la que salió (`server/inbox/eliminar.ts`): la ficha es lo que el agente fue
+ * aprendiendo, y viaja al cerebro en cada turno.
+ *
+ * Recibe el ejecutor para correr DENTRO de la transacción del borrado: vaciar
+ * la ficha de un hilo que al final no se borró sería perder datos por nada.
+ */
+export async function vaciarFicha(
+  ejecutor: Pick<ReturnType<typeof getDb>, "update">,
+  organizationId: string,
+  contactId: string
+): Promise<void> {
+  await ejecutor
+    .update(schema.contact)
+    .set({ ficha: null, updatedAt: new Date() })
+    .where(
+      scoped(
+        schema.contact.organizationId,
+        organizationId,
+        eq(schema.contact.id, contactId)
+      )
+    );
+}
+
 export function serializeFicha(
   contact: typeof schema.contact.$inferSelect
 ): Ficha {
