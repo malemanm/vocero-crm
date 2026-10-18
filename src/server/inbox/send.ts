@@ -28,6 +28,7 @@ import {
 import { sendMessengerText } from "@/server/messenger/send";
 import {
   capabilitiesFor,
+  outboundTextFor,
   textFits,
   windowClosedMessage,
 } from "@/server/channels/capabilities";
@@ -280,16 +281,22 @@ export async function sendText(input: {
   aiGenerated?: boolean;
 }): Promise<SendResult> {
   const target = await prepareSend(input.conversationId, input.organizationId);
+  // El texto de la IA sale plano en los canales que no dibujan formato.
+  const text = outboundTextFor(
+    target.conversation.channel,
+    input.text,
+    input.aiGenerated ?? false
+  );
 
   const waMessageId = target.instagram
-    ? await callInstagramSend(target, input.text)
+    ? await callInstagramSend(target, text)
     : target.messenger
-      ? await callMessengerSend(target, input.text)
+      ? await callMessengerSend(target, text)
       : await sendWhatsAppPayload(target.connection!, {
           messaging_product: "whatsapp",
           ...target.destinatario,
           type: "text",
-          text: { body: input.text },
+          text: { body: text },
         });
 
   const messageId = await persistOutbound({
@@ -297,7 +304,7 @@ export async function sendText(input: {
     conversationId: input.conversationId,
     waMessageId,
     type: "text",
-    text: input.text,
+    text,
     // Un canal sin acuses de entrega confirma al aceptar; uno con acuses
     // avanza despues por webhook. Sin esta distincion el mensaje se queda
     // con el reloj puesto para siempre.

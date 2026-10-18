@@ -1227,6 +1227,7 @@ async function main() {
   );
 
   await respuestasDeBotonChecks();
+  await eliminarConversacionChecks();
   await agendaChecks();
   await atribucionChecks();
   await anuncioDeOrigenChecks();
@@ -1244,6 +1245,80 @@ async function main() {
  * entran como texto con el rótulo del botón, igual que si lo hubiera
  * tecleado. Los payloads del mock tienen la forma documentada por Meta.
  * ========================================================================== */
+async function eliminarConversacionChecks() {
+  console.log("\n== 026: eliminar una conversación ==");
+  const CORRIDA = Date.now().toString().slice(-6);
+  const TEL = `525560${CORRIDA}`;
+  const LEAD = `5215560${CORRIDA}`;
+
+  const perfilAntes = (await api("/api/agent/profile")).json?.profile?.enabled;
+  await api("/api/agent/profile", { method: "PUT", body: JSON.stringify({ enabled: false }) });
+
+  const entrante = (n) =>
+    api("/api/dev/wa-mock/inbound", {
+      method: "POST",
+      body: JSON.stringify({
+        phoneNumberId: PN,
+        from: LEAD,
+        name: "Borrar prueba",
+        text: `hola ${n}`,
+        waMessageId: `wamid.e2e.26.${CORRIDA}.${n}`,
+      }),
+    });
+  const conversacion = async () =>
+    ((await api("/api/conversations")).json?.conversations ?? []).find(
+      (c) => c.contact.phone === TEL
+    ) ?? null;
+
+  await entrante(1);
+  let conv = null;
+  await hasta(async () => (conv = await conversacion()) !== null);
+  ok("la conversación a eliminar existe", Boolean(conv));
+  const contactoAntes = conv?.contact?.id;
+
+  // Una ruta sin sesión no borra nada.
+  const sinSesion = await fetch(`${BASE}/api/conversations/${conv?.id}`, {
+    method: "DELETE",
+    headers: { origin: BASE },
+  });
+  ok("sin sesión no se puede eliminar (401)", sinSesion.status === 401, String(sinSesion.status));
+
+  // Alcance «hilo»: se va la conversación, el contacto se queda.
+  const hilo = await api(`/api/conversations/${conv?.id}`, { method: "DELETE" });
+  ok("eliminar el hilo → 200", hilo.res.status === 200, JSON.stringify(hilo.json));
+  ok("la conversación ya no está en la bandeja", (await conversacion()) === null);
+  const otraVez = await api(`/api/conversations/${conv?.id}`, { method: "DELETE" });
+  ok("eliminarla otra vez → 404, no revienta", otraVez.res.status === 404, String(otraVez.res.status));
+  const noExiste = await api("/api/conversations/cv_noexiste", { method: "DELETE" });
+  ok("un id que no existe → 404", noExiste.res.status === 404, String(noExiste.res.status));
+
+  // Si vuelve a escribir, es una conversación nueva del MISMO contacto.
+  await entrante(2);
+  await hasta(async () => (conv = await conversacion()) !== null);
+  ok(
+    "al volver a escribir: conversación nueva, mismo contacto",
+    Boolean(conv) && conv.contact.id === contactoAntes && (await api(`/api/conversations/${conv.id}/messages`)).json?.messages?.length === 1,
+    JSON.stringify({ antes: contactoAntes, ahora: conv?.contact?.id })
+  );
+
+  // Alcance «contacto»: se va la persona entera.
+  const todo = await api(`/api/conversations/${conv?.id}?contacto=1`, { method: "DELETE" });
+  ok("eliminar con el contacto → 200", todo.res.status === 200 && todo.json?.alcance === "contacto", JSON.stringify(todo.json));
+  ok("ya no hay conversación", (await conversacion()) === null);
+  await entrante(3);
+  await hasta(async () => (conv = await conversacion()) !== null);
+  ok(
+    "si escribe de nuevo, es un contacto distinto",
+    Boolean(conv) && conv.contact.id !== contactoAntes,
+    JSON.stringify({ antes: contactoAntes, ahora: conv?.contact?.id })
+  );
+  if (conv) await api(`/api/conversations/${conv.id}?contacto=1`, { method: "DELETE" });
+
+  if (perfilAntes !== undefined) {
+    await api("/api/agent/profile", { method: "PUT", body: JSON.stringify({ enabled: perfilAntes }) });
+  }
+}
+
 async function respuestasDeBotonChecks() {
   console.log("\n== #78: una respuesta de botón entra como texto del cliente ==");
   // Contacto nuevo por corrida: la sección cuenta entrantes y espera la

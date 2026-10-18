@@ -17,6 +17,12 @@ export type ChatJsonResult<T> =
   | { ok: true; data: T; raw: string }
   | { ok: false; error: "not_configured" | "provider_error" | "invalid_output"; detail: string };
 
+/**
+ * 401 (llave inválida o revocada) y 402 (sin saldo) no se arreglan reintentando:
+ * cada intento extra solo alarga el turno y gasta una llamada que va a fallar.
+ */
+class ProviderAuthError extends Error {}
+
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
 
@@ -76,6 +82,7 @@ export async function chatJson<T>(
       return { ok: true, data: parsed.data, raw };
     } catch (err) {
       lastDetail = err instanceof Error ? err.message : String(err);
+      if (err instanceof ProviderAuthError) break;
       if (attempt < MAX_ATTEMPTS) {
         await sleep(RETRY_DELAY_MS * attempt);
       }
@@ -112,7 +119,10 @@ async function callProvider(
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`proveedor respondió ${res.status}: ${truncate(text)}`);
+      const detail = `proveedor respondió ${res.status}: ${truncate(text)}`;
+      throw res.status === 401 || res.status === 402
+        ? new ProviderAuthError(detail)
+        : new Error(detail);
     }
     const json = (await res.json()) as {
       choices?: { message?: { content?: string } }[];

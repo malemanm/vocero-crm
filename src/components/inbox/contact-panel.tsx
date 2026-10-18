@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Cable, Check, ChevronRight, Sparkles, UserRound } from "lucide-react";
+import {
+  AlertTriangle,
+  Cable,
+  Check,
+  ChevronRight,
+  Sparkles,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import {
   externalAnswerLabel,
   externalAnswering,
@@ -23,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { FichaPanel } from "@/components/ficha-panel";
+import { DeleteConversationDialog } from "./delete-conversation-dialog";
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -36,6 +45,7 @@ export function ContactPanel({
   conversation,
   refreshKey = 0,
   onPatchConversation,
+  onDeleteConversation,
   onClose,
 }: {
   conversation: ConversationDto;
@@ -45,8 +55,11 @@ export function ContactPanel({
     aiEnabled?: boolean;
     reactivate?: boolean;
   }) => Promise<void>;
+  /** 026 — Ausente = quien mira no puede eliminar: no se le ofrece. */
+  onDeleteConversation?: (alsoContact: boolean) => Promise<string | null>;
   onClose: () => void;
 }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [notes, setNotes] = useState("");
   const [ficha, setFicha] = useState<FichaDto>({});
   const [notesLoaded, setNotesLoaded] = useState(false);
@@ -374,7 +387,7 @@ export function ContactPanel({
         <FichaPanel ficha={ficha} onSave={saveFicha} />
 
         {/* Notas */}
-        <section className="p-4">
+        <section className={cn("p-4", onDeleteConversation && "border-b")}>
           <p className="kicker mb-2">Notas</p>
           <Textarea
             rows={5}
@@ -393,7 +406,30 @@ export function ContactPanel({
             {savingNotes ? "Guardando…" : "Guardar notas"}
           </Button>
         </section>
+
+        {/* 026 — Al fondo y sin color de alarma: está a la mano de quien la
+            busca, no en el camino de quien solo vino a leer la ficha. */}
+        {onDeleteConversation && (
+          <section className="p-4">
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              className="flex items-center gap-1.5 rounded text-[13px] text-text-3 transition-colors hover:text-danger-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.7} />
+              Eliminar conversación…
+            </button>
+          </section>
+        )}
       </div>
+
+      {confirmingDelete && onDeleteConversation && (
+        <DeleteConversationDialog
+          contactName={conversation.contact.name}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={onDeleteConversation}
+        />
+      )}
     </div>
   );
 }

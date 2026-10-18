@@ -1,4 +1,5 @@
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
+import { plainSocialText } from "@/lib/social-text";
 
 /**
  * 014 — Capacidades declaradas por canal.
@@ -38,6 +39,11 @@ export type ChannelCapabilities = {
    * — sin esto se queda con el reloj puesto para siempre.
    */
   deliveryReceipts: boolean;
+  /**
+   * Cómo se ve el texto de la IA: `whatsapp` dibuja *negrita* y _cursiva_;
+   * `plain` (Instagram, Messenger) enseñaría los asteriscos tal cual.
+   */
+  textFormat: "whatsapp" | "plain";
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -50,6 +56,7 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     maxTextBytes: null,
     outboundMedia: true,
     deliveryReceipts: true,
+    textFormat: "whatsapp",
   },
   instagram: {
     label: CHANNEL_LABEL.instagram,
@@ -60,6 +67,7 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     maxTextBytes: 1000,
     outboundMedia: false,
     deliveryReceipts: false,
+    textFormat: "plain",
   },
   // 017: Messenger comparte la plataforma de mensajería de Meta con Instagram
   // (misma ventana de 24 h, misma etiqueta HUMAN_AGENT fuera de ella, sin
@@ -72,6 +80,7 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     maxTextBytes: 2000,
     outboundMedia: false,
     deliveryReceipts: false,
+    textFormat: "plain",
   },
 };
 
@@ -98,4 +107,19 @@ export function textFits(channel: Channel, text: string): boolean {
   const max = capabilitiesFor(channel).maxTextBytes;
   if (max === null) return true;
   return Buffer.byteLength(text, "utf8") <= max;
+}
+
+/**
+ * El texto tal como debe salir por ese canal. Solo el texto generado por IA se
+ * transforma (escribe como si todo fuera WhatsApp); el de una persona sale tal
+ * cual lo escribió.
+ */
+export function outboundTextFor(
+  channel: Channel,
+  text: string,
+  aiGenerated: boolean
+): string {
+  return aiGenerated && capabilitiesFor(channel).textFormat === "plain"
+    ? plainSocialText(text)
+    : text;
 }

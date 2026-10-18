@@ -7,6 +7,21 @@ imagen `ghcr.io/kevinrivm/vocero-crm:X.Y.Z`.
 
 ## Sin publicar
 
+### Eliminar conversaciones, texto plano en redes y llave de IA sin saldo
+
+- **Eliminar una conversación** (portado del 026 del proyecto original, sin su
+  parte del cerebro externo): «Eliminar conversación…» al fondo de Detalles, solo
+  para propietario y administrador. Dos alcances: el hilo (mensajes, adjuntos y
+  ficha; el contacto se queda) o también el contacto y su lead. Una cita por venir
+  lo detiene con 409. Irreversible, y desaparece de las pestañas abiertas.
+- **El texto de la IA sale sin formato en Instagram y Messenger** (portado del
+  024): sin `*negritas*` ni Markdown, con viñetas y enlaces legibles. WhatsApp y lo
+  que escribe una persona no cambian.
+- **Un 401 o 402 del proveedor de IA ya no se reintenta** (llave inválida o sin
+  saldo): antes cada turno gastaba tres llamadas condenadas a fallar. La
+  conversación sigue pasando a un humano por «error», como antes.
+- No hay variables nuevas ni migración.
+
 ### El agente y la agenda: el día que pide el cliente
 
 - **Antes**, `offer_slots` no llevaba fecha: el agente ofrecía siempre los

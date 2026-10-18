@@ -19,6 +19,11 @@ export type SseEvent =
       };
     }
   | { type: "conversation.updated"; data: { conversation: unknown } }
+  /** 026 — alguien del equipo eliminó la conversación: se quita de la bandeja. */
+  | {
+      type: "conversation.deleted";
+      data: { conversationId: string; contactId: string; contactDeleted: boolean };
+    }
   /** 015 — algo cambió en la agenda: la pantalla de Citas se refresca sola. */
   | { type: "booking.updated"; data: { bookingId: string } }
   | {

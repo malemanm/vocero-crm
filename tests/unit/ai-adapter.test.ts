@@ -100,4 +100,34 @@ describe("chatJson (reintentos y errores tipados)", () => {
     if (!result.ok) expect(result.error).toBe("not_configured");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it.each([401, 402])(
+    "un %i del proveedor no se reintenta: la llave o el saldo no se arreglan solos",
+    async (status) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response("sin saldo", { status }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("provider_error");
+        expect(result.detail).toContain(String(status));
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it("un 500 del proveedor sí se reintenta (es un hipo, no una llave mala)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("boom", { status: 500 }))
+      .mockResolvedValueOnce(providerResponse('{"action":"reply","text":"ok"}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
