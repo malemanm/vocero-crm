@@ -9,6 +9,7 @@ import {
   serializeContact,
 } from "@/server/contacts";
 import { upsertFicha } from "@/server/bot/ficha";
+import { pauseConversations } from "@/server/contacts-import";
 import { cuentaComoAnuncio } from "@/lib/anuncios";
 import {
   anuncioDelContacto,
@@ -50,6 +51,8 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   notes: z.string().max(4000).nullable().optional(),
+  /** 027 — El agente no le responde a esta persona; se lleva a su conversación. */
+  aiPaused: z.boolean().optional(),
   archived: z.boolean().optional(),
   /**
    * Parche de la ficha: solo las claves que cambian. `null` borra una clave.
@@ -87,6 +90,7 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   if (body.data.archived !== undefined) {
     set.archivedAt = body.data.archived ? new Date() : null;
   }
+  if (body.data.aiPaused !== undefined) set.aiPaused = body.data.aiPaused;
 
   const db = getDb();
   const updated = await db
@@ -101,6 +105,11 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     )
     .returning();
   if (!updated[0]) return apiError(404, "not_found", "Contacto no encontrado");
+  // 027: la pausa se lleva a la conversación que ya exista; sin esto no
+  // tendría efecto hasta que naciera otra.
+  if (body.data.aiPaused !== undefined) {
+    await pauseConversations(session.organizationId, [id], body.data.aiPaused);
+  }
   const anuncio = await anuncioDelContacto(session.organizationId, id);
   return Response.json({
     contact: serializeContact(updated[0], null, null, cuentaComoAnuncio(anuncio)),

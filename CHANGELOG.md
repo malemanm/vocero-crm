@@ -7,6 +7,19 @@ imagen `ghcr.io/kevinrivm/vocero-crm:X.Y.Z`.
 
 ## Sin publicar
 
+### Importar contactos y contactos «sin agente»
+
+- **Contactos → «Importar»** (portado del 027 del proyecto original): un CSV con
+  nombre y teléfono. Se lee en el navegador y antes de crear nada enseña cuántos
+  entran y cuáles se quedan fuera con su motivo (sin teléfono, sin código de
+  país, inválido o repetido). Hasta 2,000 renglones. No duplica ni renombra a
+  quien ya existía, y no crea conversaciones ni leads.
+- **«El agente no les responde»**: casilla al importar y en «Editar» de cada
+  contacto. Si esa persona escribe, llega a la Bandeja con la IA en pausa y el
+  agente no le contesta; la etiqueta «Sin agente» sale en la lista.
+- **Migración 0017** (aditiva): `contact.ai_paused`, falso por defecto. Corre
+  sola al desplegar. Sin variables nuevas.
+
 ### Eliminar conversaciones, texto plano en redes y llave de IA sin saldo
 
 - **Eliminar una conversación** (portado del 026 del proyecto original, sin su

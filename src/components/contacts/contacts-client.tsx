@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
+  BotOff,
   MessageSquareText,
   Search,
   Send,
+  Upload,
   UserPlus,
 } from "lucide-react";
 import type { ContactDto } from "@/lib/types";
@@ -21,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SOURCE_LABELS } from "@/server/contact-source";
 import { priorityRank } from "@/server/leads/priority";
 import { PriorityBadge } from "@/components/pipeline/priority-picker";
+import { ImportContactsDialog } from "./import-contacts-dialog";
 import { NewContactDialog } from "./new-contact-dialog";
 import { StartConversation } from "./start-conversation";
 
@@ -33,6 +36,7 @@ export function ContactsClient() {
   const [showArchived, setShowArchived] = useState(false);
   const [editing, setEditing] = useState<ContactDto | null>(null);
   const [creando, setCreando] = useState(false);
+  const [importando, setImportando] = useState(false);
   const [escribiendo, setEscribiendo] = useState<ContactDto | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -92,6 +96,10 @@ export function ContactsClient() {
           <Button size="sm" onClick={() => setCreando(true)}>
             <UserPlus className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
             Nuevo contacto
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setImportando(true)}>
+            <Upload className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
+            Importar
           </Button>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
@@ -177,6 +185,15 @@ export function ContactsClient() {
                     )}
                     {c.archivedAt && (
                       <Badge variant="secondary">Archivado</Badge>
+                    )}
+                    {c.aiPaused && (
+                      <Badge
+                        variant="warning"
+                        title="El agente no le responde a este contacto: lo atiendes tú"
+                      >
+                        <BotOff className="mr-1 h-3 w-3" strokeWidth={1.8} />
+                        Sin agente
+                      </Badge>
                     )}
                     {/* Solo la fuente que alguien capturó: presentar una
                         deducción como dato la volvería un número inventado en
@@ -276,6 +293,13 @@ export function ContactsClient() {
         </div>
       )}
 
+      {importando && (
+        <ImportContactsDialog
+          onClose={() => setImportando(false)}
+          onImported={() => void refetch()}
+        />
+      )}
+
       {creando && (
         <NewContactDialog
           onClose={() => setCreando(false)}
@@ -300,10 +324,11 @@ function EditDialog({
 }: {
   contact: ContactDto;
   onClose: () => void;
-  onSave: (patch: { name: string; notes: string }) => Promise<void>;
+  onSave: (patch: { name: string; notes: string; aiPaused?: boolean }) => Promise<void>;
 }) {
   const [name, setName] = useState(contact.name);
   const [notes, setNotes] = useState(contact.notes ?? "");
+  const [aiPaused, setAiPaused] = useState(contact.aiPaused ?? false);
 
   return (
     <div
@@ -337,6 +362,21 @@ function EditDialog({
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
+          {/* 027 */}
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={aiPaused}
+              onChange={(e) => setAiPaused(e.target.checked)}
+              className="mt-0.5 accent-primary"
+            />
+            <span>
+              El agente no le responde
+              <span className="block text-[11px] text-text-3">
+                Sus mensajes llegan a la Bandeja y los atiendes tú.
+              </span>
+            </span>
+          </label>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
@@ -344,7 +384,15 @@ function EditDialog({
           </Button>
           <Button
             disabled={!name.trim()}
-            onClick={() => void onSave({ name: name.trim(), notes })}
+            onClick={() =>
+              void onSave({
+                name: name.trim(),
+                notes,
+                // Solo si cambió: mandarlo siempre reescribiría el interruptor
+                // de la Bandeja cada vez que alguien corrige un nombre.
+                ...(aiPaused !== (contact.aiPaused ?? false) ? { aiPaused } : {}),
+              })
+            }
           >
             Guardar
           </Button>

@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "node --env-file=.env scripts/e2e-selftest.mjs",
+    "test:e2e:importar": "node --env-file=.env scripts/e2e-importar.mjs",
     "test:e2e:calendario": "node --env-file=.env scripts/e2e-calendario.mjs",
     "test:e2e:resultados": "node --env-file=.env scripts/e2e-resultados.mjs",
     "test:watch": "vitest",

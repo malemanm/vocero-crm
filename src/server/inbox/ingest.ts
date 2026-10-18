@@ -217,6 +217,10 @@ export async function getOrCreateConversation(
       contactId,
       channel: opts?.channel ?? "whatsapp",
       channelThreadRef: opts?.threadRef ?? null,
+      // 027: hereda la pausa del contacto en el mismo INSERT. Si se leyera
+      // antes, cada mensaje entrante pagaría una consulta más, y entre la
+      // lectura y la inserción cabría el primer turno del agente.
+      aiEnabled: sql<boolean>`coalesce((select not c.ai_paused from contact c where c.id = ${contactId}), true)`,
     })
     .onConflictDoNothing()
     .returning();
