@@ -16,6 +16,7 @@ export function serializeContact(
     name: c.name,
     phone: c.phone,
     notes: c.notes,
+    aiPaused: c.aiPaused,
     stageName,
     archivedAt: c.archivedAt?.toISOString() ?? null,
     source: effectiveSource(c.source, llegoPorAnuncio),

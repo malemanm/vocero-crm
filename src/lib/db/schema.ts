@@ -179,6 +179,17 @@ export const contact = pgTable(
     source: text("source", {
       enum: ["anuncio", "organico", "referido", "conocido", "otro"],
     }),
+    /**
+     * 027 — El agente no le responde a esta persona: clientes, miembros,
+     * proveedores — gente a la que el dueño quiere atender él mismo.
+     *
+     * Vive en el CONTACTO y no solo en la conversación porque un contacto
+     * importado todavía no tiene conversación (no se crean hilos vacíos), y
+     * porque al eliminar una conversación (026) la siguiente nacería con el
+     * agente encendido. La conversación lo hereda al crearse
+     * (`getOrCreateConversation`); después manda el interruptor de la Bandeja.
+     */
+    aiPaused: boolean("ai_paused").notNull().default(false),
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
