@@ -1,4 +1,4 @@
-import { JUDGE_MARKER } from "@/server/ai/prompts";
+import { JUDGE_MARKER, LAB_SCRIPTS_MARKER } from "@/server/ai/prompts";
 import { CABECERA_HUECOS } from "@/server/agenda/offers";
 
 /**
@@ -42,6 +42,27 @@ export function aiMockCompletion(messages: InMessage[]): string {
       });
     }
     return JSON.stringify({ veredicto: "verde", hallazgos: [] });
+  }
+
+  // Guiones del Laboratorio adaptados al negocio: una palabra del prompt del
+  // negocio en cada mensaje prueba que el texto salió de SU configuración.
+  if (system.includes(LAB_SCRIPTS_MARKER)) {
+    const claves = [
+      ...lastUser.matchAll(/^([a-z_]+) — /gm),
+    ].map((m) => m[1]!);
+    const negocio = /CLÍNICA-DENTAL/i.test(lastUser) ? "ortodoncia" : "producto";
+    return JSON.stringify({
+      guiones: Object.fromEntries(
+        claves.map((k) => [
+          k,
+          [
+            `Hola, vi su página de ${negocio}`,
+            `¿Cuánto cuesta la ${negocio}?`,
+            `Gracias, ${k === "pide_humano" ? "prefiero hablar con una persona" : "lo pienso"}`,
+          ],
+        ])
+      ),
+    });
   }
 
   const text = lastUser.toLowerCase();

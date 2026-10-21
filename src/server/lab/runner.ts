@@ -6,7 +6,7 @@ import { publish } from "@/server/events/bus";
 import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
 import { computeScore, judgeCase } from "@/server/lab/judge";
-import { PERSONAS, type Persona } from "@/server/lab/personas";
+import { PERSONAS, resolvePersonas, type Persona } from "@/server/lab/personas";
 
 /**
  * Runner del Laboratorio (FR-030/FR-034): corrida en segundo plano DENTRO del
@@ -116,12 +116,15 @@ async function runAllCases(
         .join("\n")
     : "";
 
+  // Los guiones del negocio (Laboratorio → "Adaptar a mi negocio") o los de ejemplo.
+  const personas = resolvePersonas(profile?.labScripts);
+
   let done = 0;
   const total = cases.length;
   publishProgress(organizationId, runId, "running", done, total);
 
   for (const testCase of cases) {
-    const persona = PERSONAS.find((p) => p.key === testCase.persona);
+    const persona = personas.find((p) => p.key === testCase.persona);
     if (!persona) continue;
 
     await db

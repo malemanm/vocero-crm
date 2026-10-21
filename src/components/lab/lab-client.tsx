@@ -8,7 +8,9 @@ import {
   ChevronUp,
   FlaskConical,
   Play,
+  RotateCcw,
   Sparkles,
+  Wand2,
   TrendingDown,
   TrendingUp,
   XCircle,
@@ -45,6 +47,14 @@ type Case = {
   veredicto: "verde" | "amarillo" | "rojo" | null;
   hallazgos: Hallazgo[];
   transcript: { role: "cliente" | "agente"; text: string }[];
+};
+
+type ScriptPersona = {
+  key: string;
+  label: string;
+  description: string;
+  script: string[];
+  custom: boolean;
 };
 
 const TIPO_LABELS: Record<Hallazgo["tipo"], string> = {
@@ -168,6 +178,8 @@ export function LabClient() {
         </div>
       )}
 
+      <ScriptsCard disabled={running} />
+
       <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-[280px_1fr]">
         <HistoryList
           runs={runs}
@@ -214,6 +226,115 @@ function Header({
         {running ? "Corrida en curso…" : "Correr evaluación"}
       </Button>
     </header>
+  );
+}
+
+/**
+ * Lo que dirá cada cliente simulado. Los de ejemplo hablan de una ferretería;
+ * «Adaptar a mi negocio» los reescribe con el prompt y el conocimiento guardados.
+ */
+function ScriptsCard({ disabled }: { disabled: boolean }) {
+  const [personas, setPersonas] = useState<ScriptPersona[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<"generate" | "reset" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const res = await fetch("/api/lab/scripts").catch(() => null);
+    if (!res?.ok) return;
+    setPersonas(((await res.json()) as { personas: ScriptPersona[] }).personas);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function act(kind: "generate" | "reset") {
+    setBusy(kind);
+    setError(null);
+    const res = await fetch("/api/lab/scripts", {
+      method: kind === "generate" ? "POST" : "DELETE",
+    }).catch(() => null);
+    setBusy(null);
+    if (!res) {
+      setError("Sin conexión; inténtalo de nuevo");
+      return;
+    }
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setError(data?.error?.message ?? "No se pudo completar la acción");
+      return;
+    }
+    setOpen(true);
+    await load();
+  }
+
+  if (!personas) return null;
+  const custom = personas.some((p) => p.custom);
+
+  return (
+    <div className="mx-4 mt-4 rounded-lg border bg-card p-4 sm:mx-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">Preguntas de la evaluación</p>
+          <p className="text-xs text-muted-foreground">
+            {custom
+              ? "Escritas para tu negocio a partir de tu prompt y tu conocimiento."
+              : "Son de ejemplo (una ferretería). Adáptalas a lo que vende tu agente."}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            {open ? "Ocultar" : "Ver"}
+          </Button>
+          {custom && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={disabled || busy !== null}
+              onClick={() => void act("reset")}
+            >
+              <RotateCcw className="h-4 w-4" />
+              Restablecer
+            </Button>
+          )}
+          <Button
+            size="sm"
+            disabled={disabled || busy !== null}
+            onClick={() => void act("generate")}
+          >
+            <Wand2 className="h-4 w-4" />
+            {busy === "generate"
+              ? "Escribiendo…"
+              : custom
+                ? "Volver a adaptar"
+                : "Adaptar a mi negocio"}
+          </Button>
+        </div>
+      </div>
+      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      {open && (
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {personas.map((p) => (
+            <div key={p.key} className="rounded-md border p-3">
+              <p className="text-sm font-medium">{p.label}</p>
+              <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-muted-foreground">
+                {p.script.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -6,6 +6,9 @@ type KbEntry = typeof schema.kbEntry.$inferSelect;
 /** Marcador del prompt del juez: el ai-mock lo usa para despachar veredictos. */
 export const JUDGE_MARKER = "[JUEZ]";
 
+/** Marcador del prompt que escribe los guiones del Laboratorio (lo usa el ai-mock). */
+export const LAB_SCRIPTS_MARKER = "[GUIONES-LAB]";
+
 export function renderKb(entries: KbEntry[]): string {
   if (entries.length === 0) return "(knowledge base vacío)";
   return entries
@@ -125,5 +128,45 @@ export function buildJudgePrompt(input: {
     "Evalúa y responde el JSON.",
   ].join("\n\n");
 
+  return { system, user };
+}
+
+/**
+ * Prompt que adapta los guiones del Laboratorio al negocio: lee lo que el
+ * agente dice vender (prompt + conocimiento) y escribe lo que le diría cada
+ * cliente simulado. UNA llamada para las seis personas.
+ */
+export function buildLabScriptsPrompt(input: {
+  profile: AgentProfile;
+  kbText: string;
+  personas: { key: string; label: string; description: string; ejemplo: string[] }[];
+  limits: { minLines: number; maxLines: number; maxChars: number };
+}): { system: string; user: string } {
+  const { profile, personas, limits } = input;
+  const system = [
+    `${LAB_SCRIPTS_MARKER} Escribes los mensajes de clientes simulados para probar a un agente de WhatsApp. Cada cliente debe hablar como un cliente real de ESE negocio, con sus productos, servicios, precios y situaciones — nunca de otro giro.`,
+    "Respondes ÚNICAMENTE un objeto JSON con este esquema, con TODAS las claves de persona:",
+    '{"guiones":{"<clave>":["mensaje 1","mensaje 2", ...]}}',
+    `- Cada guion tiene entre ${limits.minLines} y ${limits.maxLines} mensajes, de máximo ${limits.maxChars} caracteres, escritos como los escribiría la persona por WhatsApp (español de México, informal).`,
+    "- Conserva la intención de cada persona (su descripción) y el orden dramático del ejemplo; cambia solo el contenido para que encaje con el negocio.",
+    "- La persona `fuera_de_kb` debe preguntar por algo que el negocio atendería pero que el CONOCIMIENTO NO cubre (compruébalo contra el conocimiento); nunca algo que sí esté respondido allí.",
+    "- Las demás personas deben preguntar por cosas que el negocio SÍ ofrece según su prompt y conocimiento.",
+    "- La persona `pide_humano` pide explícitamente hablar con una persona.",
+    "- No incluyas nombres reales, teléfonos ni datos personales.",
+  ].join("\n");
+
+  const user = [
+    `NEGOCIO — NOMBRE DEL AGENTE: ${profile.name}`,
+    profile.tone ? `TONO: ${profile.tone}` : null,
+    `INSTRUCCIONES DEL AGENTE:\n${profile.instructions || "(sin configurar)"}`,
+    profile.escalationRules ? `REGLAS DE ESCALADO:\n${profile.escalationRules}` : null,
+    `CONOCIMIENTO:\n${input.kbText}`,
+    `PERSONAS (clave — descripción — guion de ejemplo de OTRO negocio, solo como forma):\n${personas
+      .map((p) => `${p.key} — ${p.description}\n  ${JSON.stringify(p.ejemplo)}`)
+      .join("\n")}`,
+    "Escribe el JSON.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   return { system, user };
 }
