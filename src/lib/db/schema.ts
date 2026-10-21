@@ -683,6 +683,11 @@ export const agentProfile = pgTable(
     instructions: text("instructions"),
     escalationRules: text("escalation_rules"),
     greeting: text("greeting"),
+    /**
+     * Guiones del Laboratorio escritos para ESTE negocio: {clave de persona →
+     * mensajes del cliente}. NULL = los de ejemplo de `lab/personas.ts`.
+     */
+    labScripts: jsonb("lab_scripts").$type<Record<string, string[]>>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

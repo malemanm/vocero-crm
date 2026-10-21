@@ -7,6 +7,19 @@ imagen `ghcr.io/kevinrivm/vocero-crm:X.Y.Z`.
 
 ## Sin publicar
 
+### Laboratorio: preguntas adaptadas a tu negocio
+
+- Los seis clientes simulados traían preguntas de una ferretería (taladros,
+  martillos, pintura). Ahora **Laboratorio → «Adaptar a mi negocio»** las
+  reescribe leyendo el prompt y el conocimiento guardados del agente: una sola
+  llamada al LLM. Las personas (comprador decidido, enojado, pide un humano…)
+  son las mismas, así que el juez evalúa lo mismo; cambia solo lo que dicen.
+  «Fuera del conocimiento» pregunta por algo que tu conocimiento no cubre.
+- «Ver» muestra lo que dirá cada uno; «Volver a adaptar» las reescribe tras
+  cambiar el prompt y «Restablecer» regresa a las de ejemplo. Solo dueño o admin.
+- **Migración 0018** (aditiva): `agent_profile.lab_scripts`, nula por defecto
+  (= las de ejemplo). Corre sola al desplegar. Sin variables nuevas.
+
 ### Importar contactos y contactos «sin agente»
 
 - **Contactos → «Importar»** (portado del 027 del proyecto original): un CSV con

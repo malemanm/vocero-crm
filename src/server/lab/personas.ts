@@ -99,3 +99,28 @@ export const PERSONAS: Persona[] = [
 export const PERSONA_LABELS: Record<string, string> = Object.fromEntries(
   PERSONAS.map((p) => [p.key, p.label])
 );
+
+/** Largo de un guion generado: lo bastante corto para una corrida de ~5 min. */
+export const SCRIPT_LIMITS = { minLines: 3, maxLines: 6, maxChars: 300 };
+
+/**
+ * Las personas con los guiones del negocio encima de los de ejemplo. Un guion
+ * guardado que ya no cumple los límites (o una clave que no existe) se ignora:
+ * la persona conserva el de ejemplo y la corrida nunca se queda sin cliente.
+ */
+export function resolvePersonas(
+  custom: Record<string, string[]> | null | undefined
+): Persona[] {
+  return PERSONAS.map((p) => {
+    const script = custom?.[p.key];
+    return script && isValidScript(script) ? { ...p, script } : p;
+  });
+}
+
+export function isValidScript(script: string[]): boolean {
+  return (
+    script.length >= SCRIPT_LIMITS.minLines &&
+    script.length <= SCRIPT_LIMITS.maxLines &&
+    script.every((l) => l.trim().length > 0 && l.length <= SCRIPT_LIMITS.maxChars)
+  );
+}

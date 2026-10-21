@@ -41,6 +41,7 @@ function profileRow(overrides: Partial<AgentProfile> = {}): AgentProfile {
     instructions: "Vendemos limpiezas dentales.",
     escalationRules: "Urgencias de dolor → humano.",
     greeting: "¡Hola! Soy Sofi 🦷",
+    labScripts: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

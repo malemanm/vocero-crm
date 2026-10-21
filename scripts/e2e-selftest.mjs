@@ -1228,6 +1228,7 @@ async function main() {
 
   await respuestasDeBotonChecks();
   await eliminarConversacionChecks();
+  await laboratorioGuionesChecks();
   await agendaChecks();
   await atribucionChecks();
   await anuncioDeOrigenChecks();
@@ -1245,6 +1246,77 @@ async function main() {
  * entran como texto con el rótulo del botón, igual que si lo hubiera
  * tecleado. Los payloads del mock tienen la forma documentada por Meta.
  * ========================================================================== */
+/**
+ * Laboratorio: las preguntas se reescriben desde el prompt guardado. El ai-mock
+ * devuelve guiones que nombran «ortodoncia» solo si el prompt del negocio llegó
+ * al modelo, y la corrida real tiene que usarlos en vez de los de ferretería.
+ */
+async function laboratorioGuionesChecks() {
+  console.log("== Laboratorio: preguntas adaptadas al negocio ==");
+  const antes = (await api("/api/agent/profile")).json?.profile;
+
+  const base = await api("/api/lab/scripts");
+  ok(
+    "de inicio las 6 personas traen el guion de ejemplo (ferretería)",
+    base.json?.personas?.length === 6 &&
+      base.json.personas.every((p) => !p.custom) &&
+      base.json.personas.some((p) => /taladro/i.test(p.script.join(" "))),
+    JSON.stringify(base.json)?.slice(0, 200)
+  );
+
+  await api("/api/agent/profile", {
+    method: "PUT",
+    body: JSON.stringify({ instructions: "CLÍNICA-DENTAL: vendemos ortodoncia y limpiezas." }),
+  });
+  const gen = await api("/api/lab/scripts", { method: "POST" });
+  ok("POST /api/lab/scripts genera y guarda los guiones", gen.res.status === 200, JSON.stringify(gen.json));
+
+  const adaptados = await api("/api/lab/scripts");
+  const ps = adaptados.json?.personas ?? [];
+  ok(
+    "las 6 personas quedan «propias» y hablan del negocio, no de la ferretería",
+    ps.length === 6 &&
+      ps.every((p) => p.custom && /ortodoncia/i.test(p.script.join(" "))) &&
+      !ps.some((p) => /taladro|martillo/i.test(p.script.join(" "))),
+    JSON.stringify(ps[0])
+  );
+  ok(
+    "las claves y etiquetas de las personas no cambian (el juez sigue igual)",
+    ps.some((p) => p.key === "fuera_de_kb" && p.label === "Pregunta fuera del conocimiento") &&
+      ps.some((p) => p.key === "pide_humano")
+  );
+
+  const run = await api("/api/lab/runs", { method: "POST" });
+  ok("la corrida arranca", run.res.status === 202, JSON.stringify(run.json));
+  const runId = run.json?.runId;
+  const terminada = await hasta(async () => {
+    const d = await api(`/api/lab/runs/${runId}`);
+    return d.json?.run?.status === "done" || d.json?.run?.status === "failed";
+  }, 120000, 1000);
+  const det = (await api(`/api/lab/runs/${runId}`)).json;
+  ok("la corrida termina", terminada && det?.run?.status === "done", det?.run?.error ?? "");
+  const habladoDeOrto = (det?.cases ?? []).filter((c) =>
+    (c.transcript ?? []).some((t) => t.role === "cliente" && /ortodoncia/i.test(t.text))
+  );
+  ok(
+    "el cliente simulado de la corrida usó los guiones adaptados",
+    habladoDeOrto.length >= 5,
+    `${habladoDeOrto.length}/6`
+  );
+
+  const reset = await api("/api/lab/scripts", { method: "DELETE" });
+  const vuelta = (await api("/api/lab/scripts")).json?.personas ?? [];
+  ok(
+    "Restablecer devuelve los guiones de ejemplo",
+    reset.res.status === 200 && vuelta.every((p) => !p.custom)
+  );
+
+  await api("/api/agent/profile", {
+    method: "PUT",
+    body: JSON.stringify({ instructions: antes?.instructions ?? null }),
+  });
+}
+
 async function eliminarConversacionChecks() {
   console.log("\n== 026: eliminar una conversación ==");
   const CORRIDA = Date.now().toString().slice(-6);
