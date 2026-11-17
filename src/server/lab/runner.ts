@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
@@ -228,7 +229,14 @@ async function runConversation(
   const messages = await db
     .select()
     .from(schema.message)
-    .where(eq(schema.message.conversationId, convId))
+    // 064 — Acotado a la organización: así usa `message_org_conv_idx`.
+    .where(
+      scoped(
+        schema.message.organizationId,
+        organizationId,
+        eq(schema.message.conversationId, convId)
+      )
+    )
     .orderBy(asc(schema.message.createdAt));
 
   return {

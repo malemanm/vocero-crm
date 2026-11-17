@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -23,6 +23,13 @@ import type { ThemePreference } from "@/lib/theme";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
+import {
+  alDesmontarBandeja,
+  alPublicarLista,
+  bandejaMontada,
+  unaALaVez,
+  type ConversacionDeLista,
+} from "@/lib/lista-compartida";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo, BrandTile } from "@/components/brand-mark";
 import {
@@ -119,18 +126,33 @@ export function AppNav({
   const router = useRouter();
   const [unread, setUnread] = useState(0);
 
-  async function refetchUnread() {
-    const res = await fetch("/api/conversations").catch(() => null);
-    if (!res?.ok) return;
-    const data = (await res.json()) as {
-      conversations: { unreadCount: number }[];
-    };
-    setUnread(data.conversations.reduce((a, c) => a + c.unreadCount, 0));
-  }
-
-  useEffect(() => {
-    void refetchUnread();
+  const contar = useCallback((lista: ConversacionDeLista[]) => {
+    setUnread(lista.reduce((a, c) => a + c.unreadCount, 0));
   }, []);
+
+  const pedirLista = useCallback(async () => {
+    const res = await fetch("/api/conversations").catch(() => null);
+    if (!res?.ok) return null;
+    const data = (await res.json()) as { conversations: ConversacionDeLista[] };
+    contar(data.conversations);
+    return data.conversations;
+  }, [contar]);
+
+  // 064 — Con la Bandeja abierta, el contador sale de la lista que ella ya
+  // trajo: el menú no pide otra. Fuera de la Bandeja pide la suya, y las
+  // recargas seguidas se juntan en una.
+  const pedirJunta = useMemo(() => unaALaVez(pedirLista), [pedirLista]);
+  const refetchUnread = useCallback(
+    () => (bandejaMontada() ? Promise.resolve(null) : pedirJunta()),
+    [pedirJunta]
+  );
+
+  useEffect(() => alPublicarLista(contar), [contar]);
+  // Al salir de la Bandeja, el contador vuelve a depender del menú.
+  useEffect(() => alDesmontarBandeja(() => void pedirLista()), [pedirLista]);
+  useEffect(() => {
+    if (!bandejaMontada()) void pedirLista();
+  }, [pedirLista]);
 
   useEvents({
     onMessageNew: () => void refetchUnread(),
