@@ -7,6 +7,18 @@ imagen `ghcr.io/kevinrivm/vocero-crm:X.Y.Z`.
 
 ## Sin publicar
 
+### La lista de conversaciones carga más rápido
+
+- Portado del 064 del proyecto original. La vista previa de cada renglón de la
+  Bandeja ahora filtra también por organización y usa el índice
+  `message_org_conv_idx` en vez de recorrer toda la tabla de mensajes (con
+  decenas de miles de mensajes, de segundos a milisegundos). Igual en las
+  consultas del Laboratorio.
+- La Bandeja junta las recargas que provocan los eventos en vivo y publica la
+  lista que trajo; el contador del menú la toma de ahí en vez de pedir otra.
+  Una ráfaga de diez mensajes pasa de ~40 peticiones a pocas.
+- Sin migración ni variables nuevas.
+
 ### Laboratorio: preguntas adaptadas a tu negocio
 
 - Los seis clientes simulados traían preguntas de una ferretería (taladros,
